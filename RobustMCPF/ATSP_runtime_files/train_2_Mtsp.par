@@ -1,3 +1,0 @@
-PROBLEM_FILE = /Users/tamirbadalbaev/local/WorkSpace/course_multiagent/Neural_MCPF_Allocation/RobustMCPF/ATSP_runtime_files/train_2_Mtsp.atsp
-RUNS = 10
-OUTPUT_TOUR_FILE = /Users/tamirbadalbaev/local/WorkSpace/course_multiagent/Neural_MCPF_Allocation/RobustMCPF/ATSP_runtime_files/train_2_Mtsp.tour

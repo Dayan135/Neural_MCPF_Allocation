@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# Generated datasets and model checkpoints
+data/
+checkpoints/
+
+# RobustMCPF solver scratch files (LKH/ATSP temp output)
+RobustMCPF/ATSP_runtime_files/
