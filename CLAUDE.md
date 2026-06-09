@@ -50,6 +50,8 @@ start; `--num_agents` / `--grid_w` / `--grid_h` make this configurable for scale
 | `model/losses.py` | `mTSP_loss(P, Y, D, lam)`. |
 | `training/train.py` | Dataset, Adam + ReduceLROnPlateau, per-goal accuracy, best-checkpoint saving. |
 | `evaluation/evaluate.py` | Offline metrics: per-goal acc, full-assignment acc, cost ratio. |
+| `tests/` | pytest suite (`conftest.py` does sys.path setup + grid fixtures). |
+| `pytest.ini` | testpaths, `--strict-markers`, registers the `slow` marker. |
 | `RobustMCPF/` | Vendored third-party solver — see README "Credits & Rights". |
 
 ## RobustMCPF integration — must-knows
@@ -74,7 +76,20 @@ cd dataset_generation && python build_dataset.py --split train --num_samples 100
 cd ../training       && python train.py --N 2 --epochs 100
 cd ../evaluation     && python evaluate.py --checkpoint ../checkpoints/best.pt --split test
 ```
-Environment: conda env `mcpf_env` (torch 2.12, numpy, scipy; tqdm + matplotlib added).
+Environment: conda env `mcpf_env` (torch 2.12, numpy, scipy; tqdm + matplotlib + pytest added).
+
+## Tests
+
+```bash
+pytest -m "not slow"   # fast suite — pure functions, no solver/LKH (~1.5s)
+pytest                 # everything, incl. solver-integration tests
+```
+
+Solver-free tests cover the silent-corruption risks (BFS distances + normalization, grid/placement
+invariants, loss correctness + clamp guard, the column-softmax `sum==1` invariant). Tests that
+invoke RobustMCPF/LKH are marked `@pytest.mark.slow` (`tests/test_oracle.py`) — they guard the
+integration boundary that broke before (allocation format, every-goal-assigned-once, CWD restore).
+Deliberately **not** tested: full `build_dataset`/`train.py` runs and RobustMCPF internals.
 
 ## Conventions
 

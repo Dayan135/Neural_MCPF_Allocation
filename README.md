@@ -12,7 +12,7 @@ See [CLAUDE.md](CLAUDE.md) for the architecture and design decisions.
 
 ```bash
 conda activate mcpf_env          # torch 2.12, numpy, scipy
-pip install -r requirements.txt  # tqdm, matplotlib
+pip install -r requirements.txt  # tqdm, matplotlib, pytest
 ```
 
 The LKH-3 solver used by RobustMCPF is already compiled at `RobustMCPF/LKH-3.0.11/LKH`.
@@ -54,6 +54,13 @@ python evaluate.py --checkpoint ../checkpoints/best.pt --split test
 ```
 
 Reports per-goal accuracy, full-assignment accuracy, and cost ratio (NN cost / solver-optimal cost).
+
+## Tests
+
+```bash
+pytest -m "not slow"   # fast suite: distance, grids, loss, network (no solver, ~1.5s)
+pytest                 # also runs the RobustMCPF/LKH integration tests (marked `slow`)
+```
 
 ---
 
