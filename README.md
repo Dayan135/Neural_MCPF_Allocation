@@ -15,7 +15,17 @@ conda activate mcpf_env          # torch 2.12, numpy, scipy
 pip install -r requirements.txt  # tqdm, matplotlib, pytest
 ```
 
-The LKH-3 solver used by RobustMCPF is already compiled at `RobustMCPF/LKH-3.0.11/LKH`.
+### RobustMCPF solver (one-time)
+
+The solver is **not vendored** in this repo. Provision it with:
+
+```bash
+./scripts/setup_robustmcpf.sh
+```
+
+This clones [RobustMCPF](#credits--rights--robustmcpf-third-party) at a pinned commit,
+compiles the LKH-3 TSP solver for your platform, and applies the one-line BasicMAPF patch
+(`scripts/basic_mapf.patch`). Only LKH is built — BasicMAPF does not use GLKH.
 
 ## Data generation
 
@@ -66,21 +76,21 @@ pytest                 # also runs the RobustMCPF/LKH integration tests (marked 
 
 ## Credits & Rights — `RobustMCPF/` (third-party)
 
-The `RobustMCPF/` directory is a **clone of an external repository** and is **not** original work
-of this project. It is included as the exact combinatorial solver used to generate ground-truth
-goal allocations.
+RobustMCPF is an **external repository** and is **not** original work of this project. It is the
+exact combinatorial solver used to generate ground-truth goal allocations. It is **not** committed
+here (it is large, ships solver binaries, and is third-party) — `scripts/setup_robustmcpf.sh`
+clones it on demand and `RobustMCPF/` is git-ignored.
 
 - **Source:** https://github.com/yehonatan280198/RobustMCPF
 - **Paper:** *Robust Multiagent Combinatorial Path Finding* — accepted at **AAAI-2026**.
 - **Authors:** Yehonatan Kidushim, Avraham Natan, Roni Stern, Meir Kalech.
 
 **Rights / licensing:** the upstream repository ships **no LICENSE file**. All rights to the
-`RobustMCPF/` code, data, and the accompanying technical appendix remain with the original
-authors. It is vendored here only for research/coursework reproduction. Before any redistribution
-or use beyond this course, confirm the intended terms with the original authors. Do not relicense
-it. The only intentional modification is a one-line patch at
-[`Run_Robust_Cbss_Framework.py:89`](RobustMCPF/Run_Robust_Cbss_Framework.py#L89) to enable the
-basic-MAPF mode the course requires.
+RobustMCPF code, data, and the accompanying technical appendix remain with the original authors.
+It is used here only for research/coursework reproduction. Before any redistribution or use beyond
+this course, confirm the intended terms with the original authors. Do not relicense it. Our only
+modification is the one-line BasicMAPF patch in `scripts/basic_mapf.patch` (applied by the setup
+script), which enables the basic-MAPF mode the course requires.
 
 All other files in this repository (the dataset pipeline, model, training, and evaluation code) are
 the work of this project.

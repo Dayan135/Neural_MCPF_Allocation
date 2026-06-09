@@ -52,14 +52,18 @@ start; `--num_agents` / `--grid_w` / `--grid_h` make this configurable for scale
 | `evaluation/evaluate.py` | Offline metrics: per-goal acc, full-assignment acc, cost ratio. |
 | `tests/` | pytest suite (`conftest.py` does sys.path setup + grid fixtures). |
 | `pytest.ini` | testpaths, `--strict-markers`, registers the `slow` marker. |
-| `RobustMCPF/` | Vendored third-party solver — see README "Credits & Rights". |
+| `scripts/setup_robustmcpf.sh` | Provisions the solver: clone @ pinned commit, build LKH, apply patch. |
+| `scripts/basic_mapf.patch` | Our one-line BasicMAPF patch, applied to a fresh clone by the setup script. |
+| `RobustMCPF/` | Third-party solver — **not committed** (git-ignored); provisioned by the setup script. See README "Credits & Rights". |
 
 ## RobustMCPF integration — must-knows
 
 - **BasicMAPF mode:** pass `algorithm="BasicMAPF"`. This name routes through the `else` branch in
   `Run_Robust_Cbss_Framework` (→ `kBestSequencing`/LKH-TSP), `LowLevelPlan`, `Verify`, and
-  `FindConflict`. One source patch was required: [Run_Robust_Cbss_Framework.py:89](RobustMCPF/Run_Robust_Cbss_Framework.py#L89)
-  now reads `if self.algorithm not in ["IDP", "BasicMAPF"]:` to skip positive-constraint nodes.
+  `FindConflict`. One source patch was required at `Run_Robust_Cbss_Framework.py:89`
+  (`if self.algorithm not in ["IDP", "BasicMAPF"]:`, to skip positive-constraint nodes). Since
+  `RobustMCPF/` is no longer committed, that patch lives in `scripts/basic_mapf.patch` and is
+  applied to a fresh clone by `scripts/setup_robustmcpf.sh`.
 - **CWD matters:** `kBestSequencing` builds ATSP files and invokes the LKH binary via `os.getcwd()`.
   `solver_wrapper.run_basic_mapf` `chdir`s into `RobustMCPF/` for the call and restores CWD after.
   Each call uses a unique `configStr` to avoid temp-file collisions.
@@ -95,5 +99,6 @@ Deliberately **not** tested: full `build_dataset`/`train.py` runs and RobustMCPF
 
 Commit scopes (from `course_multiagent/CLAUDE.md`): `agent`, `env`, `tests`, `report`, `viz`.
 Use `env` for data/grid pipeline, `agent` for model/training. Do **not** commit generated
-`data/*.npy`, `checkpoints/`, or anything inside `RobustMCPF/` (separate git clone). The single
-intentional change to `RobustMCPF/` is the line-89 patch above.
+`data/*.npy`, `checkpoints/`, or anything inside `RobustMCPF/` (git-ignored; it is provisioned by
+the setup script, not vendored). To change solver behavior, edit `scripts/basic_mapf.patch`, not
+the working `RobustMCPF/` tree.

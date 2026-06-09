@@ -1,0 +1,11 @@
+--- a/Run_Robust_Cbss_Framework.py
++++ b/Run_Robust_Cbss_Framework.py
+@@ -86,7 +86,7 @@
+                 if A2 is not None:
+                     self.OPEN.put((A2.g, A2))
+ 
+-            if self.algorithm != "IDP":
++            if self.algorithm not in ["IDP", "BasicMAPF"]:
+                 A3 = self.GenChild(N, (agent1AndTime[0], agent2AndTime[0], x, agent1AndTime[1], agent2AndTime[1]))
+                 self.OPEN.put((A3.g, A3))
+ 
