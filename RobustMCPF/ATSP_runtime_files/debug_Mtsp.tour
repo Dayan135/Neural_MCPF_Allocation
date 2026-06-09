@@ -1,0 +1,12 @@
+NAME : mtspf.7.tour
+COMMENT : Length = 7
+COMMENT : Found by LKH-3 [Keld Helsgaun] Wed Jun 10 00:31:04 2026
+TYPE : TOUR
+DIMENSION : 4
+TOUR_SECTION
+1
+2
+4
+3
+-1
+EOF
