@@ -3,16 +3,8 @@
 # 4 N values × 2 models × 3 seeds = 24 tasks
 # Submit: sbatch scripts/exp_scale_n.sh
 #
-# Pre-requisites (run once per N before submitting):
-#   for N in 2 3 4 5; do
-#     cd dataset_generation
-#     python build_dataset.py --split train --num_samples 10000 --num_agents $N \
-#         --grid_w 8 --grid_h 8 --out_dir ../data/n${N}_8x8 --num_workers 4
-#     python build_dataset.py --split val  --num_samples 2000  --num_agents $N \
-#         --grid_w 8 --grid_h 8 --out_dir ../data/n${N}_8x8 --num_workers 4
-#     python build_dataset.py --split test --num_samples 2000  --num_agents $N \
-#         --grid_w 8 --grid_h 8 --out_dir ../data/n${N}_8x8 --num_workers 4
-#   done
+# Pre-requisite: scripts/gen_scale_data.sh has produced data/n{2,3,4,5}_8x8.
+# Chain directly: sbatch --dependency=afterok:<gendata_job_id> scripts/exp_scale_n.sh
 
 #SBATCH --job-name=mcpf_scaleN
 #SBATCH --partition=rtx3090

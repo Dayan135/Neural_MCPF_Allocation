@@ -59,6 +59,15 @@ def _try_one_sample(task):
     return D_norm, Y
 
 
+# Mix the split into the seed: with a shared base seed, train/val/test would
+# otherwise draw the same per-sample seed stream, making test a subset of train.
+_SPLIT_OFFSET = {"train": 0, "val": 1, "test": 2}
+
+
+def _split_rng(base_seed: int, split: str) -> np.random.Generator:
+    return np.random.default_rng([base_seed, _SPLIT_OFFSET[split]])
+
+
 def generate_split(
     num_samples: int,
     grid_w: int,
@@ -73,7 +82,7 @@ def generate_split(
     save_dir = os.path.join(out_dir, split)
     os.makedirs(save_dir, exist_ok=True)
 
-    rng = np.random.default_rng(base_seed)
+    rng = _split_rng(base_seed, split)
     D_list, Y_list = [], []
     attempts = 0
 

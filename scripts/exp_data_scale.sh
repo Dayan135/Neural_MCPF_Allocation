@@ -3,14 +3,9 @@
 # Train sizes {1k, 5k, 10k, 20k} × 3 seeds = 12 tasks
 # Submit: sbatch scripts/exp_data_scale.sh
 #
-# Pre-requisites (generate a large pool once, reuse subsets via --num_samples):
-#   cd dataset_generation
-#   python build_dataset.py --split train --num_samples 20000 --num_agents 3 \
-#       --grid_w 8 --grid_h 8 --out_dir ../data/n3_8x8 --num_workers 4
-#   python build_dataset.py --split val   --num_samples 2000  --num_agents 3 \
-#       --grid_w 8 --grid_h 8 --out_dir ../data/n3_8x8 --num_workers 4
-#   python build_dataset.py --split test  --num_samples 2000  --num_agents 3 \
-#       --grid_w 8 --grid_h 8 --out_dir ../data/n3_8x8 --num_workers 4
+# Pre-requisite: scripts/gen_scale_data.sh has produced data/n3_8x8_pool
+# (20k train pool + val/test copied from n3_8x8). Tasks slice the first
+# TRAIN_SIZE samples from the pool.
 
 #SBATCH --job-name=mcpf_datascale
 #SBATCH --partition=rtx3090
@@ -27,7 +22,7 @@
 set -euo pipefail
 
 PROJECT=/home/dayanb/course_multiagent/Neural_MCPF_Allocation
-DATA_DIR="$PROJECT/data/n3_8x8"
+DATA_DIR="$PROJECT/data/n3_8x8_pool"
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate mcpf_env
