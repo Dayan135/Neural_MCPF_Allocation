@@ -1,6 +1,6 @@
 #!/bin/bash
 # Generate datasets for Exp 5 (goal-goal distance ablation).
-# Produces data/n{2,3,4}_8x8_G — identical layout to the regular datasets
+# Produces data/n{2,3,4,5}_8x8_G — identical layout to the regular datasets
 # but also containing G_matrices.npy (goal-to-goal BFS distances).
 # Sequential: concurrent LKH calls sharing a split name would collide on temp files.
 #
@@ -26,7 +26,7 @@ conda activate mcpf_env
 
 cd "$PROJECT/dataset_generation"
 
-for N in 2 3 4; do
+for N in 2 3 4 5; do
     OUT="$PROJECT/data/n${N}_8x8_G"
     echo "=== N=$N -> $OUT ==="
     python build_dataset.py --split train --num_samples 10000 --num_agents "$N" \
