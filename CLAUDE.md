@@ -50,7 +50,8 @@ start; `--num_agents` / `--grid_w` / `--grid_h` make this configurable for scale
 | `model/losses.py` | `mTSP_loss(P, Y, D, lam)`. |
 | `training/train.py` | Dataset, Adam + ReduceLROnPlateau, `--model_type {mlp,deepsets,transformer}`, `--run_name` checkpoint subdir. |
 | `evaluation/evaluate.py` | Offline metrics: per-goal acc, full-assignment acc, cost ratio. Rebuilds the model from checkpoint args. |
-| `evaluation/compare.py` | Aggregates runs across checkpoint dirs: mean±std per (model_type, N) group. |
+| `evaluation/compare.py` | Aggregates runs across checkpoint dirs: mean±std per run-name group (seed suffix stripped). |
+| `evaluation/plot_results.py` | Report figures from hard-coded results: scaling curves (fig1) + N=3 ablation bars (fig2) → `evaluation/figures/` (git-ignored). |
 | `tests/` | pytest suite (`conftest.py` does sys.path setup + grid fixtures). |
 | `pytest.ini` | testpaths, `--strict-markers`, registers the `slow` marker. |
 | `scripts/setup_robustmcpf.sh` | Builds the LKH binary for the local platform (`mkdir SRC/OBJ && make`). |
@@ -176,6 +177,7 @@ Linear(M→d) goal-context projection — `use_goal_dists`). Full-assignment acc
 | 2 | 0.790±0.002 | 0.932±0.005 | +14.2pt |
 | 3 | 0.595±0.010 | 0.775±0.008 | +18.0pt |
 | 4 | 0.455±0.006 | 0.632±0.007 | +17.7pt |
+| 5 | 0.337±0.004 | 0.478±0.011 | +14.1pt (Exp 6, `gn5_*` runs on `data/n5_8x8_G`) |
 
 **The missing tour-structure signal was the real bottleneck** — D alone can't express "these
 goals are adjacent, bundle them"; G provides it and dominates any capacity gain by >10×.

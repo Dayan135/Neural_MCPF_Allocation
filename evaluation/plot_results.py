@@ -41,7 +41,7 @@ RESULTS = {
         2: (0.932, 0.005),
         3: (0.775, 0.008),
         4: (0.632, 0.007),
-        5: None,            # TODO: fill in after Exp 6 completes
+        5: (0.478, 0.011),  # Exp 6
     },
 }
 
