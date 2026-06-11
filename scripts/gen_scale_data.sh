@@ -9,6 +9,8 @@
 
 #SBATCH --job-name=mcpf_gendata
 #SBATCH --partition=cpu
+#SBATCH --account=erant
+#SBATCH --qos=normal
 #SBATCH --time=08:00:00
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
