@@ -8,9 +8,7 @@
 # Chain experiments: sbatch --dependency=afterok:<this_job_id> scripts/exp_scale_n.sh
 
 #SBATCH --job-name=mcpf_gendata
-#SBATCH --partition=rtx3090
-#SBATCH --account=erant
-#SBATCH --qos=erant
+#SBATCH --partition=cpu
 #SBATCH --time=08:00:00
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
