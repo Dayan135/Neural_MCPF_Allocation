@@ -123,9 +123,35 @@ beating the solver; closer to 1.0 means closer agreement. Aggregate runs with
 `evaluation/compare.py --pattern "arch_*"` (on the login node, prefix with
 `MKL_THREADING_LAYER=GNU` — numpy's MKL hits a missing-iomp5 symbol there).
 
-Exp 2 (`scripts/exp_scale_n.sh`: N∈{2..5}, 8×8, MLP vs Transformer) and Exp 3
-(`scripts/exp_data_scale.sh`: 1k–20k train) are queued behind dataset generation
-(`scripts/gen_scale_data.sh`, cpu partition) via `--dependency=afterok`.
+### Exp 2 — scale N (8×8, 10k train / 2k val / 2k test, 3 seeds, 2026-06-11)
+
+Full-assignment accuracy (per-goal in parens):
+
+| N | MLP | Transformer |
+|---|-----|-------------|
+| 2 | 0.772±0.003 (0.882) | 0.789±0.006 (0.890) |
+| 3 | 0.549±0.005 (0.812) | 0.590±0.004 (0.830) |
+| 4 | 0.382±0.002 (0.776) | 0.443±0.008 (0.799) |
+| 5 | 0.270±0.002 (0.758) | 0.337±0.004 (0.785) |
+
+Transformer beats MLP at every N and the gap widens with N (+1.7pt at N=2 → +6.7pt at N=5).
+Full-assignment accuracy decays roughly as (per-goal)^M for both, as expected.
+
+### Exp 3 — data scale (transformer, N=3, 8×8, 3 seeds, 2026-06-11)
+
+| Train size | Per-goal acc | Full-assignment acc |
+|-----------|-------------|---------------------|
+| 1k | 0.814±0.002 | 0.553±0.003 |
+| 5k | 0.824±0.001 | 0.578±0.001 |
+| 10k | 0.831±0.003 | 0.599±0.005 |
+| 20k | 0.835±0.002 | 0.603±0.003 |
+
+Gains are flattening by 20k (+0.4pt full from 10k→20k) — at this model size, more data alone
+won't push much further; capacity (hidden/num_layers) is the next lever.
+**Gotcha:** Exp-3 checkpoints store a deleted temp `data_dir`, so `compare.py` must be given
+`--data_dir ../data/n3_8x8_pool` explicitly; it now skips runs whose data shape mismatches the
+model's (N, M) instead of silently evaluating wrong-size data (the size-agnostic transformer
+would happily run on it).
 
 ## Tests
 
