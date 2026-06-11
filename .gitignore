@@ -5,9 +5,7 @@ __pycache__/
 # OS
 .DS_Store
 
-# Generated datasets and model checkpoints
+# Generated datasets, checkpoints, and job logs
 data/
 checkpoints/
-
-# Third-party RobustMCPF solver — not vendored; provisioned by scripts/setup_robustmcpf.sh
-RobustMCPF/
+logs/

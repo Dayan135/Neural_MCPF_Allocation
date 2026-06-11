@@ -1,0 +1,28 @@
+# Compiled binaries — platform-specific; rebuilt by scripts/setup_robustmcpf.sh
+LKH-3.0.11/LKH
+GLKH-1.1/LKH
+GLKH-1.1/GLKH
+GLKH-1.1/GLKH_EXP
+GLKH-1.1/GLKH_CHECK
+
+# Runtime temp files written during solver calls
+ATSP_runtime_files/*.atsp
+ATSP_runtime_files/*.par
+ATSP_runtime_files/*.tour
+
+# Python cache and OS artifacts
+__pycache__/
+.DS_Store
+
+# Large archives (source already extracted in-tree)
+LKH-3.0.12.tgz
+GLKH-1.1.tgz
+
+# GLKH-1.1 benchmark data and build artefacts — not needed at runtime
+GLKH-1.1/G-TOURS/
+GLKH-1.1/GTSPLIB/
+GLKH-1.1/LKH-2.0.9/
+GLKH-1.1/TMP/
+
+# Compiled object files anywhere in the tree
+**/SRC/OBJ/
