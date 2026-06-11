@@ -153,6 +153,36 @@ won't push much further; capacity (hidden/num_layers) is the next lever.
 model's (N, M) instead of silently evaluating wrong-size data (the size-agnostic transformer
 would happily run on it).
 
+### Exp 4 — capacity (transformer, N=3, 8×8, 20k train, 3 seeds, 2026-06-11)
+
+Baseline h64/L3 = the `datascale_t20000` runs (0.603 full). Full-assignment accuracy:
+
+| hidden | L=3 | L=6 |
+|--------|-----|-----|
+| 64 | 0.603±0.003 | 0.615±0.005 |
+| 128 | 0.605±0.003 | 0.617±0.001 |
+| 256 | 0.605±0.007 | 0.242±0.242 (diverged) |
+
+**Capacity is not the bottleneck**: +1.4pt at best (depth helps slightly, width does nothing).
+h256/L6 diverges on some seeds at lr=1e-3 — lower the lr if ever revisiting that size.
+
+### Exp 5 — goal-goal distance ablation (transformer h64/L3, 8×8, 10k train, 3 seeds, 2026-06-11)
+
+Input ablation: with vs without G ∈ R^(M×M) (goal-to-goal BFS distances, injected via a
+Linear(M→d) goal-context projection — `use_goal_dists`). Full-assignment accuracy:
+
+| N | without G | with G | Δ |
+|---|-----------|--------|---|
+| 2 | 0.790±0.002 | 0.932±0.005 | +14.2pt |
+| 3 | 0.595±0.010 | 0.775±0.008 | +18.0pt |
+| 4 | 0.455±0.006 | 0.632±0.007 | +17.7pt |
+
+**The missing tour-structure signal was the real bottleneck** — D alone can't express "these
+goals are adjacent, bundle them"; G provides it and dominates any capacity gain by >10×.
+The noG rows replicate Exp 2's transformer numbers on freshly generated data (0.789/0.590/0.443),
+a good consistency check. At N=2 with G, mean cost ratio is 1.0000 — near-perfect solver agreement.
+Train with `--use_goal_dists` on `data/n{2,3,4}_8x8_G` (datasets that include `G_matrices.npy`).
+
 ## Tests
 
 ```bash
