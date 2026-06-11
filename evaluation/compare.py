@@ -12,6 +12,7 @@ split, and prints mean ± std grouped by model_type (and optionally N).
 import argparse
 import fnmatch
 import os
+import re
 import sys
 from collections import defaultdict
 
@@ -35,9 +36,10 @@ def find_checkpoints(checkpoint_dir: str, pattern: str) -> list[str]:
     return matches
 
 
-def group_key(args: dict) -> str:
-    """Group runs by model_type and N for aggregation."""
-    return f"{args.get('model_type', 'mlp')}_N{args.get('N', '?')}"
+def group_key(run_name: str) -> str:
+    """Group runs by name with the seed suffix stripped, so e.g.
+    datascale_t1000_s0/s1/s2 aggregate together but t1000 vs t5000 stay apart."""
+    return re.sub(r"_s\d+$", "", run_name)
 
 
 def main():
@@ -76,10 +78,18 @@ def main():
             print(f"  [skip] {ckpt_path}: data not found at {split_dir}")
             continue
 
+        # Size-agnostic models (transformer) would silently run on data of the
+        # wrong problem size — reject any N/M mismatch instead of reporting it.
+        N, M = run_args["N"], run_args.get("M", run_args["N"])
+        if D_all.shape[1:] != (N, M):
+            print(f"  [skip] {ckpt_path}: data at {split_dir} has shape "
+                  f"{D_all.shape[1:]}, model expects ({N}, {M})")
+            continue
+
         model = load_model(ckpt_path, device)
         metrics = offline_metrics(model, D_all, Y_all, device)
         metrics["run"] = os.path.basename(os.path.dirname(ckpt_path))
-        groups[group_key(run_args)].append(metrics)
+        groups[group_key(metrics["run"])].append(metrics)
         print(f"  {metrics['run']}: per_goal={metrics['per_goal_accuracy']:.3f}  "
               f"full={metrics['full_assignment_accuracy']:.3f}  "
               f"cost_ratio={metrics['mean_cost_ratio']:.4f}")
