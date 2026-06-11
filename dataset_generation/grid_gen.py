@@ -21,9 +21,11 @@ def generate_random_map(W: int, H: int, obstacle_prob: float = 0.1, seed=None) -
     return {"Rows": H, "Cols": W, "Map": flat}
 
 
-def sample_agents_goals(map_dims: dict, N: int, seed=None) -> tuple[list, list]:
+def sample_agents_goals(map_dims: dict, N: int, M: int | None = None, seed=None) -> tuple[list, list]:
     """
-    Randomly place N agents and N goals on distinct free cells.
+    Randomly place N agents and M goals on distinct free cells.
+
+    M defaults to N (the N=M case used in all current experiments).
 
     Uses the same algorithm as GenerateInstances.create_positions_for_agents_And_Locs_For_Goals:
     - Agents get a random direction in {0, 1, 2, 3} (ignored in BasicMAPF mode)
@@ -34,19 +36,21 @@ def sample_agents_goals(map_dims: dict, N: int, seed=None) -> tuple[list, list]:
     agents : list of (flat_idx, direction)
     goals  : list of flat_idx
     """
+    if M is None:
+        M = N
     if seed is not None:
         random.seed(seed)
 
     free = [i for i, v in enumerate(map_dims["Map"]) if v == 0]
-    if len(free) < 2 * N:
+    if len(free) < N + M:
         raise ValueError(
-            f"Grid has only {len(free)} free cells; need at least {2 * N} for {N} agents + {N} goals."
+            f"Grid has only {len(free)} free cells; need at least {N + M} for {N} agents + {M} goals."
         )
 
     agent_locs = random.sample(free, N)
     agents = [(loc, random.randint(0, 3)) for loc in agent_locs]
 
     remaining = [idx for idx in free if idx not in set(agent_locs)]
-    goals = random.sample(remaining, N)
+    goals = random.sample(remaining, M)
 
     return agents, goals

@@ -14,6 +14,7 @@ Usage:
 import argparse
 import os
 import sys
+import time
 
 import numpy as np
 import torch
@@ -66,6 +67,7 @@ def offline_metrics(
     per_goal_correct = []
     full_match = []
     cost_ratios = []
+    inference_times_ms = []
 
     for start in range(0, len(D_all), batch_size):
         D_batch = torch.from_numpy(D_all[start : start + batch_size]).float().to(device)
@@ -74,9 +76,12 @@ def offline_metrics(
             G_batch = torch.from_numpy(G_all[start : start + batch_size]).float().to(device)
         Y_batch = Y_all[start : start + batch_size]
 
+        t0 = time.perf_counter()
         with torch.no_grad():
             P_batch = (model(D_batch, G=G_batch) if G_batch is not None
                        else model(D_batch)).cpu().numpy()
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0 / len(D_batch)
+        inference_times_ms.extend([elapsed_ms] * len(D_batch))
 
         D_np = D_all[start : start + batch_size]
 
@@ -99,6 +104,7 @@ def offline_metrics(
         "full_assignment_accuracy": float(np.mean(full_match)),
         "mean_cost_ratio": float(np.mean(cost_ratios)),
         "max_cost_ratio": float(np.max(cost_ratios)),
+        "mean_inference_ms": float(np.mean(inference_times_ms)),
         "n_samples": len(D_all),
     }
 
