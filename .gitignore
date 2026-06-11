@@ -5,7 +5,8 @@ __pycache__/
 # OS
 .DS_Store
 
-# Generated datasets, checkpoints, and job logs
+# Generated datasets, checkpoints, job logs, and rendered figures
 data/
 checkpoints/
 logs/
+evaluation/figures/
