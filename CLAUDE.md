@@ -45,16 +45,21 @@ start; `--num_agents` / `--grid_w` / `--grid_h` make this configurable for scale
 | `dataset_generation/grid_gen.py` | Random grids + agent/goal placement (placement logic inlined from GenerateInstances — that module runs map-loading at import time and can't be imported). |
 | `dataset_generation/distance.py` | BFS distance matrix + normalization. |
 | `dataset_generation/oracle.py` | Runs the solver, builds `Y`, validates column sums. |
-| `dataset_generation/build_dataset.py` | Orchestrates generation; argparse; writes `data/{split}/{D,Y}_matrices.npy`. |
-| `model/network.py` | `GoalAllocMLP(N, M, hidden)` — flatten D → 2 hidden layers → column softmax. |
+| `dataset_generation/build_dataset.py` | Orchestrates generation; argparse; `--num_workers` parallel solver calls; per-split rng (`_split_rng`); writes `data/{split}/{D,Y}_matrices.npy`. |
+| `model/network.py` | Three architectures + `build_model` factory: `GoalAllocMLP` (flatten → 2 hidden layers), `GoalAllocDeepSets` (shared per-goal MLP), `GoalAllocTransformer` (row-column attention on D, size-agnostic params). All end in column softmax. |
 | `model/losses.py` | `mTSP_loss(P, Y, D, lam)`. |
-| `training/train.py` | Dataset, Adam + ReduceLROnPlateau, per-goal accuracy, best-checkpoint saving. |
-| `evaluation/evaluate.py` | Offline metrics: per-goal acc, full-assignment acc, cost ratio. |
+| `training/train.py` | Dataset, Adam + ReduceLROnPlateau, `--model_type {mlp,deepsets,transformer}`, `--run_name` checkpoint subdir. |
+| `evaluation/evaluate.py` | Offline metrics: per-goal acc, full-assignment acc, cost ratio. Rebuilds the model from checkpoint args. |
+| `evaluation/compare.py` | Aggregates runs across checkpoint dirs: mean±std per (model_type, N) group. |
 | `tests/` | pytest suite (`conftest.py` does sys.path setup + grid fixtures). |
 | `pytest.ini` | testpaths, `--strict-markers`, registers the `slow` marker. |
 | `scripts/setup_robustmcpf.sh` | Builds the LKH binary for the local platform (`mkdir SRC/OBJ && make`). |
 | `scripts/basic_mapf.patch` | Our one-line BasicMAPF patch — kept for reference; already applied in the vendored tree. |
 | `scripts/poc_2agent_2goal.sh` | Slurm job: build LKH → generate 500/100/100 samples → train 50 epochs → evaluate. |
+| `scripts/gen_scale_data.sh` | Slurm job (cpu partition, qos=normal): generates all Exp-2/3 datasets sequentially (parallel jobs sharing a split name would collide on LKH temp files). |
+| `scripts/exp_arch.sh` | Slurm array (9): {mlp,deepsets,transformer} × 3 seeds at N=2, 5×5. |
+| `scripts/exp_scale_n.sh` | Slurm array (24): N∈{2..5} × {mlp,transformer} × 3 seeds, 8×8, 10k train. |
+| `scripts/exp_data_scale.sh` | Slurm array (12): transformer N=3 8×8, train size {1k,5k,10k,20k} × 3 seeds, slices `data/n3_8x8_pool`. |
 | `RobustMCPF/` | Third-party solver — **now vendored** (committed); owner granted permission. Binaries and build artifacts are git-ignored via `RobustMCPF/.gitignore`. |
 
 ## RobustMCPF integration — must-knows
@@ -94,19 +99,33 @@ After creating the env, build LKH: `bash scripts/setup_robustmcpf.sh`
 Remote path: `/home/dayanb/course_multiagent/Neural_MCPF_Allocation`
 Submit PoC job: `sbatch scripts/poc_2agent_2goal.sh` (from project root, after `mkdir -p logs`)
 
-## PoC results — N=2, M=2, 5×5 grid (2026-06-11)
+## Results
 
-Config: 500 train / 100 val / 100 test samples, 50 epochs, batch=64, hidden=64, λ=0.1.
+**Seed-leakage caveat:** before 2026-06-11, `build_dataset.py` seeded every split with the same
+base seed, so val/test instances replayed the train set's seed stream. The original PoC numbers
+(per-goal 0.855, full 0.720) and the first Exp-1 run were measured on contaminated test sets and
+are void. Fixed by `_split_rng` (rng seeded with `[base_seed, split_offset]`); regression test in
+`tests/test_build_dataset.py`.
 
-| Metric | Value |
-|--------|-------|
-| Per-goal accuracy | 0.855 |
-| Full-assignment accuracy | 0.720 |
-| Mean cost ratio (NN / solver) | 0.968 |
-| Max cost ratio | 1.000 |
+### Exp 1 — architecture comparison (clean data, 2026-06-11)
 
-Val loss converged around epoch 28–30 (best: 0.3828). Max cost ratio of 1.0 means the model never
-produces a worse assignment than the solver on this test set.
+N=2, M=2, 5×5, 5k train / 1k val / 1k test, 100 epochs, batch=256, hidden=64, λ=0.1, 3 seeds.
+
+| Model | Per-goal acc | Full-assignment acc | Mean cost ratio |
+|-------|-------------|---------------------|-----------------|
+| DeepSets | 0.858±0.000 | 0.727±0.000 | 0.9689±0.0000 |
+| MLP | 0.875±0.004 | 0.756±0.005 | 0.9760±0.0013 |
+| Transformer | 0.887±0.001 | 0.782±0.002 | 0.9905±0.0023 |
+
+Transformer wins on both accuracies. Caveat on cost ratio: it uses Σ Y_pred·D (assignment cost on
+the BFS matrix), *not* the true mTSP tour cost — below-1 values reflect that metric mismatch, not
+beating the solver; closer to 1.0 means closer agreement. Aggregate runs with
+`evaluation/compare.py --pattern "arch_*"` (on the login node, prefix with
+`MKL_THREADING_LAYER=GNU` — numpy's MKL hits a missing-iomp5 symbol there).
+
+Exp 2 (`scripts/exp_scale_n.sh`: N∈{2..5}, 8×8, MLP vs Transformer) and Exp 3
+(`scripts/exp_data_scale.sh`: 1k–20k train) are queued behind dataset generation
+(`scripts/gen_scale_data.sh`, cpu partition) via `--dependency=afterok`.
 
 ## Tests
 
