@@ -78,13 +78,13 @@ def main():
             print(f"  [skip] {ckpt_path}: data not found at {split_dir}")
             continue
 
-        # Size-agnostic models (transformer) would silently run on data of the
-        # wrong problem size — reject any N/M mismatch instead of reporting it.
-        N, M = run_args["N"], run_args.get("M", run_args["N"])
-        if D_all.shape[1:] != (N, M):
-            print(f"  [skip] {ckpt_path}: data at {split_dir} has shape "
-                  f"{D_all.shape[1:]}, model expects ({N}, {M})")
-            continue
+        # Universal models accept any (N, M); per-size models must match exactly.
+        if not run_args.get("universal", False):
+            N, M = run_args["N"], run_args.get("M", run_args["N"])
+            if D_all.shape[1:] != (N, M):
+                print(f"  [skip] {ckpt_path}: data at {split_dir} has shape "
+                      f"{D_all.shape[1:]}, model expects ({N}, {M})")
+                continue
 
         G_all = None
         if run_args.get("use_goal_dists", False):

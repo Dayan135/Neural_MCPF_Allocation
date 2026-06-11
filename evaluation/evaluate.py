@@ -29,14 +29,16 @@ from model.network import build_model
 def load_model(checkpoint_path: str, device: torch.device):
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     args = ckpt["args"]
+    universal = args.get("universal", False)
     model = build_model(
         model_type=args.get("model_type", "mlp"),
-        N=args["N"],
-        M=args.get("M", args["N"]),
+        N=None if universal else args["N"],
+        M=None if universal else args.get("M", args["N"]),
         hidden=args["hidden"],
         num_heads=args.get("num_heads", 4),
         num_layers=args.get("num_layers", 3),
         use_goal_dists=args.get("use_goal_dists", False),
+        universal=universal,
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()

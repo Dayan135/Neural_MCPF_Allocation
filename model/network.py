@@ -203,16 +203,87 @@ class GoalAllocTransformer(nn.Module):
         return torch.softmax(logits, dim=1)
 
 
+class GoalAllocTransformerUniversal(nn.Module):
+    """
+    Size-agnostic transformer for mTSP goal allocation.
+
+    Handles any (N, M) with a single set of weights:
+    - No agent/goal positional embeddings: agents and goals are unordered in
+      mTSP (any permutation gives an equivalent problem), so fixed positional
+      IDs would break equivariance.  The distance values in D already
+      distinguish positions through content.
+    - G injection via scalar embed + sum-pool instead of Linear(M→d), so M can
+      vary freely at inference time.  For each goal j, each G[b,j,k] scalar is
+      embedded with Linear(1→d) and the M embeddings are summed to produce
+      goal j's neighbourhood context.
+
+    Architecture is otherwise identical to GoalAllocTransformer (same
+    _RowColBlock, input_proj, out_proj).
+
+    Parameters
+    ----------
+    hidden         : embedding dimension d
+    num_heads      : attention heads per block
+    num_layers     : number of row-column blocks
+    use_goal_dists : inject G-derived neighbourhood context before attention
+    """
+
+    def __init__(
+        self,
+        hidden: int = 64,
+        num_heads: int = 4,
+        num_layers: int = 3,
+        use_goal_dists: bool = False,
+    ):
+        super().__init__()
+        d = hidden
+        self.use_goal_dists = use_goal_dists
+
+        self.input_proj = nn.Linear(1, d)
+
+        if use_goal_dists:
+            self.g_scalar_proj = nn.Linear(1, d)
+        else:
+            self.g_scalar_proj = None
+
+        self.blocks = nn.ModuleList([
+            _RowColBlock(d, num_heads) for _ in range(num_layers)
+        ])
+        self.out_proj = nn.Linear(d, 1)
+
+    def forward(self, D: Tensor, G: Tensor | None = None) -> Tensor:
+        E = self.input_proj(D.unsqueeze(-1))  # (B, N, M, d)
+
+        if self.g_scalar_proj is not None and G is not None:
+            # G: (B, M, M) — for each goal j embed every G[b,j,k] and sum over k
+            goal_ctx = self.g_scalar_proj(G.unsqueeze(-1)).sum(dim=2)  # (B, M, d)
+            E = E + goal_ctx[:, None, :, :]  # broadcast → (B, N, M, d)
+
+        for block in self.blocks:
+            E = block(E)
+
+        logits = self.out_proj(E).squeeze(-1)
+        return torch.softmax(logits, dim=1)
+
+
 def build_model(
     model_type: str,
-    N: int,
-    M: int,
+    N: int | None,
+    M: int | None,
     hidden: int,
     num_heads: int = 4,
     num_layers: int = 3,
     use_goal_dists: bool = False,
+    universal: bool = False,
 ) -> nn.Module:
     """Factory used by train.py and evaluate.py."""
+    if universal:
+        if model_type != "transformer":
+            raise ValueError("universal=True only supported for model_type='transformer'")
+        return GoalAllocTransformerUniversal(
+            hidden=hidden, num_heads=num_heads, num_layers=num_layers,
+            use_goal_dists=use_goal_dists,
+        )
     if model_type == "mlp":
         return GoalAllocMLP(N=N, M=M, hidden=hidden)
     elif model_type == "deepsets":
