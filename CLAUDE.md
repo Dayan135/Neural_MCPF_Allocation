@@ -52,25 +52,25 @@ start; `--num_agents` / `--grid_w` / `--grid_h` make this configurable for scale
 | `evaluation/evaluate.py` | Offline metrics: per-goal acc, full-assignment acc, cost ratio. |
 | `tests/` | pytest suite (`conftest.py` does sys.path setup + grid fixtures). |
 | `pytest.ini` | testpaths, `--strict-markers`, registers the `slow` marker. |
-| `scripts/setup_robustmcpf.sh` | Provisions the solver: clone @ pinned commit, build LKH, apply patch. |
-| `scripts/basic_mapf.patch` | Our one-line BasicMAPF patch, applied to a fresh clone by the setup script. |
-| `RobustMCPF/` | Third-party solver — **not committed** (git-ignored); provisioned by the setup script. See README "Credits & Rights". |
+| `scripts/setup_robustmcpf.sh` | Builds the LKH binary for the local platform (`mkdir SRC/OBJ && make`). |
+| `scripts/basic_mapf.patch` | Our one-line BasicMAPF patch — kept for reference; already applied in the vendored tree. |
+| `scripts/poc_2agent_2goal.sh` | Slurm job: build LKH → generate 500/100/100 samples → train 50 epochs → evaluate. |
+| `RobustMCPF/` | Third-party solver — **now vendored** (committed); owner granted permission. Binaries and build artifacts are git-ignored via `RobustMCPF/.gitignore`. |
 
 ## RobustMCPF integration — must-knows
 
 - **BasicMAPF mode:** pass `algorithm="BasicMAPF"`. This name routes through the `else` branch in
   `Run_Robust_Cbss_Framework` (→ `kBestSequencing`/LKH-TSP), `LowLevelPlan`, `Verify`, and
   `FindConflict`. One source patch was required at `Run_Robust_Cbss_Framework.py:89`
-  (`if self.algorithm not in ["IDP", "BasicMAPF"]:`, to skip positive-constraint nodes). Since
-  `RobustMCPF/` is no longer committed, that patch lives in `scripts/basic_mapf.patch` and is
-  applied to a fresh clone by `scripts/setup_robustmcpf.sh`.
+  (`if self.algorithm not in ["IDP", "BasicMAPF"]:`, to skip positive-constraint nodes). The patch
+  is already applied in the vendored tree; `scripts/basic_mapf.patch` is kept for reference only.
 - **CWD matters:** `kBestSequencing` builds ATSP files and invokes the LKH binary via `os.getcwd()`.
   `solver_wrapper.run_basic_mapf` `chdir`s into `RobustMCPF/` for the call and restores CWD after.
   Each call uses a unique `configStr` to avoid temp-file collisions.
 - **Formats:** agents are `[(flat_idx, direction), ...]` (direction ignored in basic mode); goals are
   `[flat_idx, ...]`; `flat_idx = row*Cols + col`. Allocation comes from
   `solver.K_optimal_sequences[1]["Allocations"]` as `{agent: [start_loc, goal_loc, ...]}`.
-- **LKH binary** is already compiled at `RobustMCPF/LKH-3.0.11/LKH`.
+- **LKH binary** is not committed (platform-specific). Build it once with `scripts/setup_robustmcpf.sh`.
 
 ## Running
 
@@ -80,7 +80,33 @@ cd dataset_generation && python build_dataset.py --split train --num_samples 100
 cd ../training       && python train.py --N 2 --epochs 100
 cd ../evaluation     && python evaluate.py --checkpoint ../checkpoints/best.pt --split test
 ```
-Environment: conda env `mcpf_env` (torch 2.12, numpy, scipy; tqdm + matplotlib + pytest added).
+
+Environment: conda env `mcpf_env` (numpy, scipy, tqdm, matplotlib, pytest via conda; torch installed
+via pip due to MKL conflict with conda-channel torch on the cluster):
+```bash
+conda install -n mcpf_env numpy scipy tqdm matplotlib pytest -c conda-forge
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+```
+After creating the env, build LKH: `bash scripts/setup_robustmcpf.sh`
+
+### Cluster (slurm.bgu.ac.il)
+
+Remote path: `/home/dayanb/course_multiagent/Neural_MCPF_Allocation`
+Submit PoC job: `sbatch scripts/poc_2agent_2goal.sh` (from project root, after `mkdir -p logs`)
+
+## PoC results — N=2, M=2, 5×5 grid (2026-06-11)
+
+Config: 500 train / 100 val / 100 test samples, 50 epochs, batch=64, hidden=64, λ=0.1.
+
+| Metric | Value |
+|--------|-------|
+| Per-goal accuracy | 0.855 |
+| Full-assignment accuracy | 0.720 |
+| Mean cost ratio (NN / solver) | 0.968 |
+| Max cost ratio | 1.000 |
+
+Val loss converged around epoch 28–30 (best: 0.3828). Max cost ratio of 1.0 means the model never
+produces a worse assignment than the solver on this test set.
 
 ## Tests
 
@@ -99,6 +125,6 @@ Deliberately **not** tested: full `build_dataset`/`train.py` runs and RobustMCPF
 
 Commit scopes (from `course_multiagent/CLAUDE.md`): `agent`, `env`, `tests`, `report`, `viz`.
 Use `env` for data/grid pipeline, `agent` for model/training. Do **not** commit generated
-`data/*.npy`, `checkpoints/`, or anything inside `RobustMCPF/` (git-ignored; it is provisioned by
-the setup script, not vendored). To change solver behavior, edit `scripts/basic_mapf.patch`, not
-the working `RobustMCPF/` tree.
+`data/*.npy`, `checkpoints/`, or `logs/`. To change solver behavior, edit `scripts/basic_mapf.patch`
+and re-apply it to `RobustMCPF/` manually — do not edit `RobustMCPF/` files directly without
+updating the patch.
