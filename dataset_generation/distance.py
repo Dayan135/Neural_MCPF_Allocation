@@ -38,17 +38,35 @@ def bfs_distance(map_dims: dict, src_flat: int, dst_flat: int) -> float:
 
 def compute_distance_matrix(map_dims: dict, agents: list, goals: list) -> np.ndarray:
     """
-    Compute the N×N distance matrix D where D[i,j] = BFS distance from agent i to goal j.
+    Compute the N×M distance matrix D where D[i,j] = BFS distance from agent i to goal j.
 
     agents : list of (flat_idx, direction) — direction is ignored
     goals  : list of flat_idx
     """
     N = len(agents)
-    D = np.zeros((N, N), dtype=float)
+    M = len(goals)
+    D = np.zeros((N, M), dtype=float)
     for i, (agent_flat, _) in enumerate(agents):
         for j, goal_flat in enumerate(goals):
             D[i, j] = bfs_distance(map_dims, agent_flat, goal_flat)
     return D
+
+
+def compute_goal_distance_matrix(map_dims: dict, goals: list) -> np.ndarray:
+    """
+    Compute the M×M goal-to-goal distance matrix G where G[j,k] = BFS distance
+    from goal j to goal k.  G is symmetric; diagonal is 0.
+
+    goals : list of flat_idx
+    """
+    M = len(goals)
+    G = np.zeros((M, M), dtype=float)
+    for j in range(M):
+        for k in range(j + 1, M):
+            d = bfs_distance(map_dims, goals[j], goals[k])
+            G[j, k] = d
+            G[k, j] = d
+    return G
 
 
 def normalize_D(D: np.ndarray, W: int, H: int) -> np.ndarray:

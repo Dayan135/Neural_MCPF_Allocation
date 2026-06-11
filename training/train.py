@@ -27,7 +27,7 @@ from model.losses import mTSP_loss
 
 
 class AllocationDataset(Dataset):
-    def __init__(self, data_dir: str, split: str):
+    def __init__(self, data_dir: str, split: str, use_goal_dists: bool = False):
         split_dir = os.path.join(data_dir, split)
         self.D = torch.from_numpy(
             np.load(os.path.join(split_dir, "D_matrices.npy"))
@@ -35,11 +35,22 @@ class AllocationDataset(Dataset):
         self.Y = torch.from_numpy(
             np.load(os.path.join(split_dir, "Y_matrices.npy"))
         ).float()
+        self.G = None
+        if use_goal_dists:
+            g_path = os.path.join(split_dir, "G_matrices.npy")
+            if not os.path.exists(g_path):
+                raise FileNotFoundError(
+                    f"G_matrices.npy not found at {g_path}; "
+                    "regenerate data (build_dataset.py now emits it automatically)"
+                )
+            self.G = torch.from_numpy(np.load(g_path)).float()
 
     def __len__(self) -> int:
         return len(self.D)
 
     def __getitem__(self, idx):
+        if self.G is not None:
+            return self.D[idx], self.G[idx], self.Y[idx]
         return self.D[idx], self.Y[idx]
 
 
@@ -54,9 +65,15 @@ def run_epoch(model, loader, optimizer, lam, device, train: bool):
     total_loss = total_ce = total_ms = total_acc = 0.0
 
     with torch.set_grad_enabled(train):
-        for D, Y in loader:
+        for batch in loader:
+            if len(batch) == 3:
+                D, G, Y = batch
+                G = G.to(device)
+            else:
+                D, Y = batch
+                G = None
             D, Y = D.to(device), Y.to(device)
-            P = model(D)
+            P = model(D, G=G) if G is not None else model(D)
             loss, l_ce, l_ms = mTSP_loss(P, Y, D, lam=lam)
 
             if train:
@@ -85,6 +102,8 @@ def main():
                         help="attention heads (transformer only)")
     parser.add_argument("--num_layers", type=int, default=3,
                         help="transformer blocks (transformer only)")
+    parser.add_argument("--use_goal_dists", action="store_true",
+                        help="load G_matrices.npy and inject goal-goal context into transformer")
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -105,14 +124,15 @@ def main():
         f"hidden={args.hidden}  lam={args.lam}"
     )
 
-    train_ds = AllocationDataset(args.data_dir, "train")
-    val_ds = AllocationDataset(args.data_dir, "val")
+    train_ds = AllocationDataset(args.data_dir, "train", use_goal_dists=args.use_goal_dists)
+    val_ds = AllocationDataset(args.data_dir, "val", use_goal_dists=args.use_goal_dists)
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=2)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
     model = build_model(
         args.model_type, N=args.N, M=args.M, hidden=args.hidden,
         num_heads=args.num_heads, num_layers=args.num_layers,
+        use_goal_dists=args.use_goal_dists,
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(

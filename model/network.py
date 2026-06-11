@@ -131,21 +131,21 @@ class GoalAllocTransformer(nn.Module):
     Architecture:
       D (B,N,M) → embed each scalar D[b,i,j] to R^d
       + learned agent/goal positional embeddings
+      [+ goal-goal context from G (B,M,M) if use_goal_dists=True]
       → E (B,N,M,d)
       → L × [RowAttn + ColAttn + FFN + LayerNorm]
       → Linear(d→1) → logits (B,N,M)
       → column softmax → P (B,N,M)
 
-    The same parameters handle any N,M at inference time (positional
-    embeddings are the only N,M-dependent component; train with fixed N,M).
-
     Parameters
     ----------
-    N         : number of agents
-    M         : number of goals (defaults to N when None)
-    hidden    : embedding dimension d
-    num_heads : attention heads per block
-    num_layers: number of row-column blocks
+    N              : number of agents
+    M              : number of goals (defaults to N when None)
+    hidden         : embedding dimension d
+    num_heads      : attention heads per block
+    num_layers     : number of row-column blocks
+    use_goal_dists : if True, accept G (B,M,M) and inject goal-neighbourhood
+                     context via a Linear(M→d) projection before the blocks
     """
 
     def __init__(
@@ -155,51 +155,73 @@ class GoalAllocTransformer(nn.Module):
         hidden: int = 64,
         num_heads: int = 4,
         num_layers: int = 3,
+        use_goal_dists: bool = False,
     ):
         super().__init__()
         self.N = N
         self.M = M if M is not None else N
         d = hidden
+        self.use_goal_dists = use_goal_dists
 
         self.input_proj = nn.Linear(1, d)
-        # Positional embeddings: one per agent row, one per goal column
         self.agent_emb = nn.Embedding(self.N, d)
         self.goal_emb = nn.Embedding(self.M, d)
+
+        # Optional goal-neighbourhood context: for each goal j, G[b,j,:] ∈ R^M
+        # encodes distances to all other goals.  Linear(M→d) projects it into
+        # the same space as the agent-goal embeddings.
+        if use_goal_dists:
+            self.goal_ctx_proj = nn.Linear(self.M, d)
+        else:
+            self.goal_ctx_proj = None
 
         self.blocks = nn.ModuleList([
             _RowColBlock(d, num_heads) for _ in range(num_layers)
         ])
         self.out_proj = nn.Linear(d, 1)
 
-    def forward(self, D: Tensor) -> Tensor:
+    def forward(self, D: Tensor, G: Tensor | None = None) -> Tensor:
         B, N, M = D.shape
         device = D.device
 
-        # Embed each scalar distance: (B, N, M) -> (B, N, M, d)
         E = self.input_proj(D.unsqueeze(-1))
 
-        # Add positional embeddings broadcast over B
-        agent_ids = torch.arange(N, device=device)          # (N,)
-        goal_ids = torch.arange(M, device=device)           # (M,)
-        E = E + self.agent_emb(agent_ids)[None, :, None, :] # broadcast (1,N,1,d)
-        E = E + self.goal_emb(goal_ids)[None, None, :, :]   # broadcast (1,1,M,d)
+        agent_ids = torch.arange(N, device=device)
+        goal_ids = torch.arange(M, device=device)
+        E = E + self.agent_emb(agent_ids)[None, :, None, :]
+        E = E + self.goal_emb(goal_ids)[None, None, :, :]
+
+        if self.goal_ctx_proj is not None and G is not None:
+            # G: (B, M, M); goal_ctx_proj maps R^M → R^d per goal row
+            goal_ctx = self.goal_ctx_proj(G)   # (B, M, d)
+            E = E + goal_ctx[:, None, :, :]    # broadcast (B, 1, M, d) → (B, N, M, d)
 
         for block in self.blocks:
             E = block(E)
 
-        logits = self.out_proj(E).squeeze(-1)   # (B, N, M)
+        logits = self.out_proj(E).squeeze(-1)
         return torch.softmax(logits, dim=1)
 
 
-def build_model(model_type: str, N: int, M: int, hidden: int,
-                num_heads: int = 4, num_layers: int = 3) -> nn.Module:
+def build_model(
+    model_type: str,
+    N: int,
+    M: int,
+    hidden: int,
+    num_heads: int = 4,
+    num_layers: int = 3,
+    use_goal_dists: bool = False,
+) -> nn.Module:
     """Factory used by train.py and evaluate.py."""
     if model_type == "mlp":
         return GoalAllocMLP(N=N, M=M, hidden=hidden)
     elif model_type == "deepsets":
         return GoalAllocDeepSets(N=N, M=M, hidden=hidden)
     elif model_type == "transformer":
-        return GoalAllocTransformer(N=N, M=M, hidden=hidden,
-                                    num_heads=num_heads, num_layers=num_layers)
+        return GoalAllocTransformer(
+            N=N, M=M, hidden=hidden,
+            num_heads=num_heads, num_layers=num_layers,
+            use_goal_dists=use_goal_dists,
+        )
     else:
         raise ValueError(f"Unknown model_type: {model_type!r}")

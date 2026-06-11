@@ -86,8 +86,16 @@ def main():
                   f"{D_all.shape[1:]}, model expects ({N}, {M})")
             continue
 
+        G_all = None
+        if run_args.get("use_goal_dists", False):
+            g_path = os.path.join(split_dir, "G_matrices.npy")
+            if not os.path.exists(g_path):
+                print(f"  [skip] {ckpt_path}: use_goal_dists=True but G_matrices.npy missing at {split_dir}")
+                continue
+            G_all = np.load(g_path)
+
         model = load_model(ckpt_path, device)
-        metrics = offline_metrics(model, D_all, Y_all, device)
+        metrics = offline_metrics(model, D_all, Y_all, device, G_all=G_all)
         metrics["run"] = os.path.basename(os.path.dirname(ckpt_path))
         groups[group_key(metrics["run"])].append(metrics)
         print(f"  {metrics['run']}: per_goal={metrics['per_goal_accuracy']:.3f}  "

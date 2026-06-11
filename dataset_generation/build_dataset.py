@@ -25,7 +25,7 @@ import numpy as np
 from tqdm import tqdm
 
 from grid_gen import generate_random_map, sample_agents_goals
-from distance import compute_distance_matrix, normalize_D
+from distance import compute_distance_matrix, compute_goal_distance_matrix, normalize_D
 from oracle import get_ground_truth
 
 _CHUNK = 64  # tasks submitted to the pool at a time
@@ -34,7 +34,7 @@ _CHUNK = 64  # tasks submitted to the pool at a time
 def _try_one_sample(task):
     """
     Single-sample generation attempt.  Runs in a worker process.
-    Returns (D_norm, Y) on success, None on rejection.
+    Returns (D_norm, G_norm, Y) on success, None on rejection.
 
     Each worker has its own process address space, so os.chdir inside
     solver_wrapper is safe — it does not affect other workers.
@@ -50,13 +50,18 @@ def _try_one_sample(task):
     if np.any(D == float("inf")):
         return None
 
+    G = compute_goal_distance_matrix(map_dims, goals)
+    if np.any(G == float("inf")):
+        return None
+
     result = get_ground_truth(map_dims, agents, goals, config_str=config_str)
     if result is None:
         return None
 
     Y, _ = result
     D_norm = normalize_D(D, grid_w, grid_h)
-    return D_norm, Y
+    G_norm = normalize_D(G, grid_w, grid_h)
+    return D_norm, G_norm, Y
 
 
 # Mix the split into the seed: with a shared base seed, train/val/test would
@@ -83,7 +88,7 @@ def generate_split(
     os.makedirs(save_dir, exist_ok=True)
 
     rng = _split_rng(base_seed, split)
-    D_list, Y_list = [], []
+    D_list, G_list, Y_list = [], [], []
     attempts = 0
 
     def _next_tasks(n):
@@ -105,7 +110,8 @@ def generate_split(
                     result = _try_one_sample(task)
                     if result is not None:
                         D_list.append(result[0])
-                        Y_list.append(result[1])
+                        G_list.append(result[1])
+                        Y_list.append(result[2])
                         pbar.update(1)
         else:
             with multiprocessing.Pool(num_workers) as pool:
@@ -114,10 +120,12 @@ def generate_split(
                     for result in pool.imap_unordered(_try_one_sample, tasks):
                         if result is not None and len(D_list) < num_samples:
                             D_list.append(result[0])
-                            Y_list.append(result[1])
+                            G_list.append(result[1])
+                            Y_list.append(result[2])
                             pbar.update(1)
 
     np.save(os.path.join(save_dir, "D_matrices.npy"), np.array(D_list, dtype=np.float32))
+    np.save(os.path.join(save_dir, "G_matrices.npy"), np.array(G_list, dtype=np.float32))
     np.save(os.path.join(save_dir, "Y_matrices.npy"), np.array(Y_list, dtype=np.float32))
     print(f"Saved {num_samples} samples to {save_dir}/ ({attempts} attempts total)")
 

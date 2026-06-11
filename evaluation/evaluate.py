@@ -35,6 +35,7 @@ def load_model(checkpoint_path: str, device: torch.device):
         hidden=args["hidden"],
         num_heads=args.get("num_heads", 4),
         num_layers=args.get("num_layers", 3),
+        use_goal_dists=args.get("use_goal_dists", False),
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
@@ -59,6 +60,7 @@ def offline_metrics(
     D_all: np.ndarray,
     Y_all: np.ndarray,
     device: torch.device,
+    G_all: np.ndarray | None = None,
     batch_size: int = 512,
 ) -> dict:
     per_goal_correct = []
@@ -67,10 +69,14 @@ def offline_metrics(
 
     for start in range(0, len(D_all), batch_size):
         D_batch = torch.from_numpy(D_all[start : start + batch_size]).float().to(device)
+        G_batch = None
+        if G_all is not None:
+            G_batch = torch.from_numpy(G_all[start : start + batch_size]).float().to(device)
         Y_batch = Y_all[start : start + batch_size]
 
         with torch.no_grad():
-            P_batch = model(D_batch).cpu().numpy()
+            P_batch = (model(D_batch, G=G_batch) if G_batch is not None
+                       else model(D_batch)).cpu().numpy()
 
         D_np = D_all[start : start + batch_size]
 
@@ -107,12 +113,18 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(args.checkpoint, device)
 
+    ckpt_args = torch.load(args.checkpoint, map_location="cpu", weights_only=False)["args"]
+    use_goal_dists = ckpt_args.get("use_goal_dists", False)
+
     split_dir = os.path.join(args.data_dir, args.split)
     D_all = np.load(os.path.join(split_dir, "D_matrices.npy"))
     Y_all = np.load(os.path.join(split_dir, "Y_matrices.npy"))
+    G_all = None
+    if use_goal_dists:
+        G_all = np.load(os.path.join(split_dir, "G_matrices.npy"))
 
     print(f"\n--- Offline metrics on '{args.split}' split ({len(D_all)} samples) ---")
-    metrics = offline_metrics(model, D_all, Y_all, device)
+    metrics = offline_metrics(model, D_all, Y_all, device, G_all=G_all)
     for k, v in metrics.items():
         print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
 
