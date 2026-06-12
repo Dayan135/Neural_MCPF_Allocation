@@ -75,3 +75,51 @@ def test_fixed_alloc_restores_cwd(open_5x5):
         open_5x5, AGENTS, GOALS, {0: [24], 1: [23]}, config_str="test_fix_cwd"
     )
     assert os.getcwd() == before
+
+
+# --- infeasible allocation: two agents must cross in a width-1 corridor ---
+#
+#   col:  0 1 2 3 4 5
+#  row 0: █ █ █ █ █ █
+#  row 1: █ . A B . █     free cells: 7, 8, 9, 10
+#  row 2: █ █ █ █ █ █
+#
+# Agent A starts at 8, agent B at 9.  Goals: 10 (right end) and 7 (left end).
+# Bad allocation: A takes 10, B takes 7 — they must pass through each other,
+# impossible in a width-1 corridor (vanish-at-target doesn't help: neither
+# can reach its goal first).  The swap (A→7, B→10) is trivially solvable, so
+# the instance itself is fine; only the allocation is infeasible.
+#
+# Note: the framework uses vanish-at-target semantics (a finished agent stops
+# being an obstacle), so "parked agent blocks a corridor" is NOT infeasible
+# here — crossing is the minimal truly-infeasible case.
+
+@pytest.fixture
+def corridor():
+    grid = [1] * 18
+    for c in (7, 8, 9, 10):
+        grid[c] = 0
+    return {"Rows": 3, "Cols": 6, "Map": grid}
+
+
+CORRIDOR_AGENTS = [(8, 0), (9, 0)]
+CORRIDOR_GOALS = [10, 7]
+
+
+def test_infeasible_allocation_returns_none(corridor):
+    bad = {0: [10], 1: [7]}   # A and B must cross — impossible
+    result = run_basic_mapf_with_allocation(
+        corridor, CORRIDOR_AGENTS, CORRIDOR_GOALS, bad,
+        config_str="test_infeasible", cbs_node_budget=2_000,
+    )
+    assert result is None
+
+
+def test_feasible_swap_of_infeasible_allocation(corridor):
+    good = {0: [7], 1: [10]}  # each agent moves away from the other
+    result = run_basic_mapf_with_allocation(
+        corridor, CORRIDOR_AGENTS, CORRIDOR_GOALS, good,
+        config_str="test_feasible_swap",
+    )
+    assert result is not None
+    assert np.isfinite(result["cost"])

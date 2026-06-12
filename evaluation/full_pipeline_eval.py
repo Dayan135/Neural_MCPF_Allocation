@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import heapq
 import itertools
 import os
 import sys
@@ -33,7 +34,7 @@ for p in (_ROOT, os.path.join(_ROOT, "dataset_generation")):
 from grid_gen import generate_random_map, sample_agents_goals
 from distance import compute_distance_matrix, compute_goal_distance_matrix, normalize_D
 from solver_wrapper import run_basic_mapf, run_basic_mapf_with_allocation
-from evaluate import load_model, decode_assignment
+from evaluate import load_model
 
 
 def order_goals(agent_idx: int, goal_indices: list[int], D: np.ndarray, G: np.ndarray) -> list[int]:
@@ -48,6 +49,42 @@ def order_goals(agent_idx: int, goal_indices: list[int], D: np.ndarray, G: np.nd
         if cost < best_cost:
             best_cost, best_perm = cost, perm
     return list(best_perm)
+
+
+def kbest_allocations(P: np.ndarray, max_k: int):
+    """
+    Yield hard allocation matrices Y ∈ {0,1}^(N×M) in decreasing joint
+    probability Π_j P[a_j, j] — the NN-side analogue of the solver's k-best
+    allocation escape.  Lazy best-first enumeration over the product of
+    per-goal categorical distributions.
+
+    k=1 is the column-wise argmax (identical to decode_assignment).
+    """
+    N, M = P.shape
+    # Per goal: agent indices sorted by descending probability.
+    order = np.argsort(-P, axis=0)              # (N, M)
+    logp = np.log(np.clip(P, 1e-12, None))
+
+    def state_logp(ranks):
+        return sum(logp[order[r, j], j] for j, r in enumerate(ranks))
+
+    start = (0,) * M
+    heap = [(-state_logp(start), start)]
+    seen = {start}
+    yielded = 0
+    while heap and yielded < max_k:
+        neg, ranks = heapq.heappop(heap)
+        Y = np.zeros((N, M), dtype=float)
+        for j, r in enumerate(ranks):
+            Y[order[r, j], j] = 1.0
+        yield Y
+        yielded += 1
+        for j in range(M):
+            if ranks[j] + 1 < N:
+                child = ranks[:j] + (ranks[j] + 1,) + ranks[j + 1:]
+                if child not in seen:
+                    seen.add(child)
+                    heapq.heappush(heap, (-state_logp(child), child))
 
 
 def generate_instance(grid_w, grid_h, num_agents, num_goals, obstacle_prob, seed):
@@ -77,6 +114,9 @@ def main():
     parser.add_argument("--n_instances", type=int, default=200)
     parser.add_argument("--seed", type=int, default=987654321,
                         help="instance-stream seed (distinct from training seeds)")
+    parser.add_argument("--max_fallbacks", type=int, default=3,
+                        help="NN allocation candidates to try (ranked by joint "
+                             "probability) before declaring the instance infeasible")
     args = parser.parse_args()
 
     num_goals = args.num_goals if args.num_goals is not None else args.num_agents
@@ -104,7 +144,8 @@ def main():
 
     cost_nn_list, cost_solver_list = [], []
     alloc_ms_list, nn_plan_ms_list, solver_ms_list = [], [], []
-    n_done, attempts = 0, 0
+    fallback_counts = []
+    n_done, attempts, n_infeasible = 0, 0, 0
 
     while n_done < args.n_instances:
         inst_seed = int(rng.integers(0, 2**31))
@@ -127,21 +168,35 @@ def main():
             G_t = torch.from_numpy(G_norm).float()[None].to(device)
         with torch.no_grad():
             P = (model(D_t, G=G_t) if G_t is not None else model(D_t))[0].cpu().numpy()
-        Y_pred = decode_assignment(P)
-        ordered_allocation = {}
-        for agent_idx in range(args.num_agents):
-            assigned = list(np.where(Y_pred[agent_idx] > 0.5)[0])
-            order = order_goals(agent_idx, assigned, D_raw, G_raw)
-            ordered_allocation[agent_idx] = [goals[g] for g in order]
         alloc_ms = (time.perf_counter() - t0) * 1000.0
 
-        # --- NN path planning (CBS on fixed allocation, no LKH) ---
+        # --- NN path planning with probability-ranked fallbacks ---
+        # If the top allocation admits no collision-free plan, try the next
+        # candidates in decreasing joint probability — the NN-side analogue
+        # of the solver's k=2,3,… LKH escape.
+        nn_result = None
+        fallbacks_used = 0
         t0 = time.perf_counter()
-        nn_result = run_basic_mapf_with_allocation(
-            map_dims, agents, goals, ordered_allocation,
-            config_str=f"fp_nn_{n_done}",
-        )
+        for cand_idx, Y_pred in enumerate(kbest_allocations(P, args.max_fallbacks)):
+            ordered_allocation = {}
+            for agent_idx in range(args.num_agents):
+                assigned = list(np.where(Y_pred[agent_idx] > 0.5)[0])
+                order = order_goals(agent_idx, assigned, D_raw, G_raw)
+                ordered_allocation[agent_idx] = [goals[g] for g in order]
+            nn_result = run_basic_mapf_with_allocation(
+                map_dims, agents, goals, ordered_allocation,
+                config_str=f"fp_nn_{n_done}_{cand_idx}",
+            )
+            if nn_result is not None:
+                fallbacks_used = cand_idx
+                break
         nn_plan_ms = (time.perf_counter() - t0) * 1000.0
+
+        if nn_result is None:
+            n_infeasible += 1
+            n_done += 1
+            continue
+        fallback_counts.append(fallbacks_used)
 
         # --- Full solver (LKH + CBS) ---
         t0 = time.perf_counter()
@@ -168,6 +223,10 @@ def main():
     print(f"\n--- Full MAPF execution cost: NN vs solver "
           f"({args.grid_w}x{args.grid_h}, N={args.num_agents}, M={num_goals}, "
           f"{n_done} instances, {attempts} attempts) ---")
+    print(f"  infeasible_rate       : {n_infeasible / n_done:.4f} "
+          f"({n_infeasible} of {n_done}, after {args.max_fallbacks} candidates)")
+    print(f"  fallback_rate         : {np.mean(np.array(fallback_counts) > 0):.4f} "
+          f"(mean fallbacks {np.mean(fallback_counts):.3f})")
     print(f"  mean_cost_nn          : {cost_nn.mean():.3f}")
     print(f"  mean_cost_solver      : {cost_solver.mean():.3f}")
     print(f"  mean_exec_cost_ratio  : {ratios.mean():.4f}")
