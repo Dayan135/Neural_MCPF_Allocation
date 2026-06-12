@@ -26,6 +26,10 @@ CKPT="$PROJECT/checkpoints/universal_s0/best.pt"
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate mcpf_env
 
+# Some cpu nodes (e.g. ise-cpu-intl-03) hit the missing-iomp5 MKL symbol,
+# same as the login node — force the GNU threading layer.
+export MKL_THREADING_LAYER=GNU
+
 cd "$PROJECT/evaluation"
 
 for CONFIG in "2 2" "3 3" "4 4" "2 4" "4 6" "2 6"; do
