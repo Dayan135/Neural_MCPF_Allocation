@@ -34,7 +34,8 @@ for N in 2 3 4 5; do
             --checkpoint "$CKPT" \
             --grid_w 8 --grid_h 8 \
             --num_agents "$N" --num_goals "$M" \
-            --n_instances 200
+            --n_instances 200 \
+            --csv "$PROJECT/results/fullpipe_big/n${N}m${M}.csv"
     done
 done
 

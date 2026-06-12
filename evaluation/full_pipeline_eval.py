@@ -117,6 +117,9 @@ def main():
     parser.add_argument("--max_fallbacks", type=int, default=3,
                         help="NN allocation candidates to try (ranked by joint "
                              "probability) before declaring the instance infeasible")
+    parser.add_argument("--csv", type=str, default=None,
+                        help="optional path for a per-instance CSV dump, so new "
+                             "aggregate stats can be computed without re-running")
     args = parser.parse_args()
 
     num_goals = args.num_goals if args.num_goals is not None else args.num_agents
@@ -146,6 +149,7 @@ def main():
     alloc_ms_list, nn_plan_ms_list, solver_ms_list = [], [], []
     fallback_counts, solver_k_list = [], []
     nn_conflicts_list, solver_conflicts_list = [], []
+    csv_rows = []
     n_done, attempts, n_infeasible = 0, 0, 0
 
     while n_done < args.n_instances:
@@ -214,6 +218,10 @@ def main():
         solver_k_list.append(solver_result["k_roots"])
         nn_conflicts_list.append(nn_result["resolved_conflicts"])
         solver_conflicts_list.append(solver_result["resolved_conflicts"])
+        csv_rows.append((inst_seed, nn_result["cost"], solver_result["cost"],
+                         fallbacks_used + 1, solver_result["k_roots"],
+                         nn_result["resolved_conflicts"], solver_result["resolved_conflicts"],
+                         alloc_ms, nn_plan_ms, solver_ms))
         n_done += 1
         if n_done % 50 == 0:
             print(f"  {n_done}/{args.n_instances} instances done", flush=True)
@@ -246,13 +254,26 @@ def main():
     print(f"  mean_cost_solver      : {cost_solver.mean():.3f}")
     print(f"  mean_exec_cost_ratio  : {ratios.mean():.4f}")
     print(f"  max_exec_cost_ratio   : {ratios.max():.4f}")
-    print(f"  mean_cost_diff_steps  : {(cost_nn - cost_solver).mean():.3f}")
+    diff = cost_nn - cost_solver
+    print(f"  mean_cost_diff_steps  : {diff.mean():.3f}")
+    print(f"  std_cost_diff_steps   : {diff.std():.3f}")
+    print(f"  max_cost_diff_steps   : {diff.max():.3f}")
     print(f"  exact_cost_match_rate : {(cost_nn == cost_solver).mean():.4f}")
     print(f"  mean_nn_alloc_ms      : {np.mean(alloc_ms_list):.3f}")
     print(f"  mean_nn_plan_ms       : {np.mean(nn_plan_ms_list):.3f}")
     print(f"  mean_nn_total_ms      : {nn_total_ms.mean():.3f}")
     print(f"  mean_solver_ms        : {solver_ms_arr.mean():.3f}")
     print(f"  speedup               : {solver_ms_arr.mean() / nn_total_ms.mean():.1f}x")
+
+    if args.csv:
+        os.makedirs(os.path.dirname(os.path.abspath(args.csv)), exist_ok=True)
+        with open(args.csv, "w") as f:
+            f.write("inst_seed,cost_nn,cost_solver,nn_k,solver_k,"
+                    "conflicts_nn,conflicts_solver,alloc_ms,nn_plan_ms,solver_ms\n")
+            for row in csv_rows:
+                f.write(",".join(f"{v:.4f}" if isinstance(v, float) else str(v)
+                                 for v in row) + "\n")
+        print(f"  per-instance CSV      : {args.csv} ({len(csv_rows)} rows)")
 
 
 if __name__ == "__main__":
