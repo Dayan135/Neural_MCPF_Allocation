@@ -134,3 +134,33 @@ apples-to-apples ratio). Solver wall-time measured on 50 reconstructed instances
 only 5.6% above optimal — most "wrong" assignments are near-ties. Three orders of magnitude
 faster than the solver at 1–6% cost suboptimality. NN time is batched amortized (batch=512);
 single-instance latency would be higher but still ≫100× faster.
+
+## Exp 9 — full MAPF execution cost (universal_s0, 200 instances/config, 2026-06-12)
+
+The end-to-end comparison (`evaluation/full_pipeline_eval.py`): same fresh instance fed to both
+pipelines; **both end in CBS collision-free path planning**; costs are true execution costs
+(`Solution[5]`). NN pipeline = NN forward + brute-force goal ordering + CBS on the fixed
+allocation (`run_basic_mapf_with_allocation`, no LKH call). Solver pipeline = LKH + CBS.
+Times are single-instance (not batched), measured on a cluster cpu node.
+
+| Config | Exec-cost ratio | Exact-cost match | Mean diff (steps) | NN ms | Solver ms | Speedup |
+|--------|----------------|------------------|--------------------|-------|-----------|---------|
+| n2m2 | 1.0101 | 96.5% | 0.08 | 9.6 | 16.2 | 1.7× |
+| n3m3 | 1.0070 | 97.0% | 0.07 | 8.0 | 21.7 | 2.7× |
+| n4m4 | 1.0291 | 88.0% | 0.27 | 9.2 | 28.3 | 3.1× |
+| n2m4 | 1.0202 | 88.5% | 0.26 | 6.8 | 15.1 | 2.2× |
+| n4m6 | 1.0500 | 72.5% | 0.69 | 10.0 | 36.3 | 3.6× |
+| n2m6 | 1.0626 | 64.0% | 1.09 | 9.2 | 22.5 | 2.4× |
+
+Key observations:
+- **Execution cost is 0.7–6.3% above optimal** across all configs; exact-cost match (64–97%) is
+  much higher than exact-assignment match (Exp 7: 44–91%) — many "wrong" allocations are
+  cost-equivalent ties.
+- **Single-instance speedup is 1.7–3.6×**, far below the batched-inference speedups of Exp 8
+  (~10³×): when the NN must plan paths too, CBS dominates both pipelines and only the LKH call
+  is saved. The NN's real speed advantage appears when (a) instances are batched, or (b) the
+  TSP/LKH share grows with problem size — the speedup indeed trends up with M (1.7× → 3.6×).
+- Hardest config (n2m6, ~3 goals/agent tours): ratio 1.063 — consistent with Exp 8's tour-cost
+  picture; allocation errors, not collisions, drive the gap.
+- Round-trip validation: injecting the solver's own allocation reproduces its exact cost
+  (`tests/test_fixed_alloc.py`).

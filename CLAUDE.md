@@ -117,11 +117,12 @@ missing-iomp5 symbol there).
 
 ## Results
 
-All experiment results (Exp 1–8: architecture comparison, N/data/capacity scaling, goal-goal
-distance ablation, universal mixed-size model, full-pipeline NN-vs-solver timing) are in
-[RESULTS.md](RESULTS.md). Headlines: goal-goal distances G are the dominant input feature
+All experiment results (Exp 1–9: architecture comparison, N/data/capacity scaling, goal-goal
+distance ablation, universal mixed-size model, NN-vs-solver timing, full MAPF execution cost) are
+in [RESULTS.md](RESULTS.md). Headlines: goal-goal distances G are the dominant input feature
 (+14–18pt); one universal 151k-param transformer beats per-size specialists including zero-shot
-on unseen N=5; the NN is ~260–1250× faster than the solver at 1–6% tour-cost suboptimality.
+on unseen N=5; replacing LKH with the NN inside the full CBS pipeline costs only 0.7–6.3% in true
+execution cost at 1.7–3.6× single-instance speedup (~10³× batched, allocation-only).
 
 ## Tests
 
