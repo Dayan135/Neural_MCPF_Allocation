@@ -148,7 +148,7 @@ def per_goal_accuracy(P: torch.Tensor, Y: torch.Tensor) -> float:
     return (pred == true).float().mean().item()
 
 
-def run_epoch(model, loader, optimizer, lam, device, train: bool):
+def run_epoch(model, loader, optimizer, lam, device, train: bool, grad_clip: float | None = None):
     model.train(train)
     total_loss = total_ce = total_ms = total_acc = 0.0
 
@@ -167,6 +167,8 @@ def run_epoch(model, loader, optimizer, lam, device, train: bool):
             if train:
                 optimizer.zero_grad()
                 loss.backward()
+                if grad_clip is not None:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
                 optimizer.step()
 
             total_loss += loss.item()
@@ -201,6 +203,8 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--lam", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--grad_clip", type=float, default=None,
+                        help="gradient norm clip value (recommended: 1.0 for large models)")
     parser.add_argument("--checkpoint_dir", default=os.path.join("..", "checkpoints"))
     parser.add_argument("--run_name", default=None,
                         help="subdirectory under checkpoint_dir for this run")
@@ -268,10 +272,11 @@ def main():
 
     for epoch in range(1, args.epochs + 1):
         tr_loss, tr_ce, tr_ms, tr_acc = run_epoch(
-            model, train_loader, optimizer, args.lam, device, train=True
+            model, train_loader, optimizer, args.lam, device, train=True,
+            grad_clip=args.grad_clip,
         )
         val_loss, val_ce, val_ms, val_acc = run_epoch(
-            model, val_loader, optimizer, args.lam, device, train=False
+            model, val_loader, optimizer, args.lam, device, train=False,
         )
         scheduler.step(val_loss)
 
