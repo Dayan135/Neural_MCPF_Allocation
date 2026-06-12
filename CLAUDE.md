@@ -46,7 +46,7 @@ start; `--num_agents` / `--grid_w` / `--grid_h` make this configurable for scale
 | `dataset_generation/distance.py` | BFS distance matrix + normalization. |
 | `dataset_generation/oracle.py` | Runs the solver, builds `Y`, validates column sums. |
 | `dataset_generation/build_dataset.py` | Orchestrates generation; argparse; `--num_workers` parallel solver calls; per-split rng (`_split_rng`); writes `data/{split}/{D,Y}_matrices.npy`. |
-| `model/network.py` | Three architectures + `build_model` factory: `GoalAllocMLP` (flatten → 2 hidden layers), `GoalAllocDeepSets` (shared per-goal MLP), `GoalAllocTransformer` (row-column attention on D, size-agnostic params). All end in column softmax. |
+| `model/network.py` | Four architectures + `build_model` factory: `GoalAllocMLP` (flatten → 2 hidden layers), `GoalAllocDeepSets` (shared per-goal MLP), `GoalAllocTransformer` (row-column attention on D, per-size positional embeddings), `GoalAllocTransformerUniversal` (no positional embeddings, size-agnostic G injection — one model for any N, M; `universal=True`). All end in column softmax. |
 | `model/losses.py` | `mTSP_loss(P, Y, D, lam)`. |
 | `training/train.py` | Dataset, Adam + ReduceLROnPlateau, `--model_type {mlp,deepsets,transformer}`, `--run_name` checkpoint subdir. |
 | `evaluation/evaluate.py` | Offline metrics: per-goal acc, full-assignment acc, cost ratio. Rebuilds the model from checkpoint args. |
@@ -61,6 +61,11 @@ start; `--num_agents` / `--grid_w` / `--grid_h` make this configurable for scale
 | `scripts/exp_arch.sh` | Slurm array (9): {mlp,deepsets,transformer} × 3 seeds at N=2, 5×5. |
 | `scripts/exp_scale_n.sh` | Slurm array (24): N∈{2..5} × {mlp,transformer} × 3 seeds, 8×8, 10k train. |
 | `scripts/exp_data_scale.sh` | Slurm array (12): transformer N=3 8×8, train size {1k,5k,10k,20k} × 3 seeds, slices `data/n3_8x8_pool`. |
+| `scripts/gen_nm_data.sh` | Slurm job: generates N≠M datasets (n2m4, n3m6, n2m6) with G. |
+| `scripts/exp_nm.sh` | Slurm array (9): transformer+G on the three N≠M configs × 3 seeds. |
+| `scripts/gen_universal_data.sh` | Slurm job (~24h cpu): 15 configs N∈{2,3,4}×M∈{2..6}, 15k/3k/3k each → `data/universal_8x8/n{N}m{M}`. |
+| `scripts/exp_universal.sh` | Slurm array (3): universal model on all 15 configs jointly (`--mixed`), then per-config eval. |
+| `evaluation/pipeline_eval.py` | NN-vs-solver pipeline eval: tour cost from D+G (optimal per-agent goal order), inference/solver timing, `--n_timing`. |
 | `RobustMCPF/` | Third-party solver — **now vendored** (committed); owner granted permission. Binaries and build artifacts are git-ignored via `RobustMCPF/.gitignore`. |
 
 ## RobustMCPF integration — must-knows
@@ -184,6 +189,27 @@ goals are adjacent, bundle them"; G provides it and dominates any capacity gain 
 The noG rows replicate Exp 2's transformer numbers on freshly generated data (0.789/0.590/0.443),
 a good consistency check. At N=2 with G, mean cost ratio is 1.0000 — near-perfect solver agreement.
 Train with `--use_goal_dists` on `data/n{2,3,4}_8x8_G` (datasets that include `G_matrices.npy`).
+
+### Exp 7 — universal mixed-size model (2026-06-12)
+
+One `GoalAllocTransformerUniversal` (h64/L3, 151k params — no positional embeddings, G via
+scalar-embed + sum-pool) trained jointly on all 15 configs N∈{2,3,4} × M∈{2,3,4,5,6},
+15k train / 3k val / 3k test per config (`data/universal_8x8/n{N}m{M}`), 3 seeds.
+Train with `--mixed --data_dirs <comma-separated>` (`MixedSizeBatchSampler` keeps each batch
+shape-homogeneous; no padding). Full-assignment accuracy vs the per-size Exp-5 specialists:
+
+| Config | Per-size specialist | Universal | Δ |
+|--------|--------------------|-----------| --|
+| N=M=2 | 0.932±0.005 | 0.913±0.002 | −1.9pt |
+| N=M=3 | 0.775±0.008 | 0.810±0.002 | +3.5pt |
+| N=M=4 | 0.632±0.007 | 0.656±0.007 | +2.4pt |
+| N=M=5 **zero-shot** | 0.478±0.011 | 0.513±0.003 | +3.5pt |
+
+**Zero-shot N=5 beats the specialist trained on N=5** — the model never saw N=5 (trained on
+N≤4) yet transfers upward, evidence it learned the allocation principle rather than size-specific
+patterns. Only regression is the easiest config (N=2). Mean cost ratio ~0.99 everywhere;
+inference ~0.06 ms/instance. Caveat: not data-matched vs baselines (15k/config vs 10k, plus
+225k total cross-config transfer). Training is fast: ~25 min/seed on rtx3090 for 100 epochs.
 
 ## Tests
 
