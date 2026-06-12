@@ -144,7 +144,8 @@ def main():
 
     cost_nn_list, cost_solver_list = [], []
     alloc_ms_list, nn_plan_ms_list, solver_ms_list = [], [], []
-    fallback_counts = []
+    fallback_counts, solver_k_list = [], []
+    nn_conflicts_list, solver_conflicts_list = [], []
     n_done, attempts, n_infeasible = 0, 0, 0
 
     while n_done < args.n_instances:
@@ -210,6 +211,9 @@ def main():
         alloc_ms_list.append(alloc_ms)
         nn_plan_ms_list.append(nn_plan_ms)
         solver_ms_list.append(solver_ms)
+        solver_k_list.append(solver_result["k_roots"])
+        nn_conflicts_list.append(nn_result["resolved_conflicts"])
+        solver_conflicts_list.append(solver_result["resolved_conflicts"])
         n_done += 1
         if n_done % 50 == 0:
             print(f"  {n_done}/{args.n_instances} instances done", flush=True)
@@ -227,6 +231,17 @@ def main():
           f"({n_infeasible} of {n_done}, after {args.max_fallbacks} candidates)")
     print(f"  fallback_rate         : {np.mean(np.array(fallback_counts) > 0):.4f} "
           f"(mean fallbacks {np.mean(fallback_counts):.3f})")
+
+    def k_hist(values):
+        vals = np.array(values)
+        parts = [f"k={k}: {np.mean(vals == k):.1%}" for k in sorted(set(vals))]
+        return "  ".join(parts)
+
+    nn_k = [f + 1 for f in fallback_counts]
+    print(f"  nn_k_chosen           : {k_hist(nn_k)} (mean {np.mean(nn_k):.3f})")
+    print(f"  solver_k_roots        : {k_hist(solver_k_list)} (mean {np.mean(solver_k_list):.3f})")
+    print(f"  mean_conflicts_nn     : {np.mean(nn_conflicts_list):.3f}")
+    print(f"  mean_conflicts_solver : {np.mean(solver_conflicts_list):.3f}")
     print(f"  mean_cost_nn          : {cost_nn.mean():.3f}")
     print(f"  mean_cost_solver      : {cost_solver.mean():.3f}")
     print(f"  mean_exec_cost_ratio  : {ratios.mean():.4f}")

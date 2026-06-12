@@ -199,4 +199,9 @@ def _build_result(solver, goals: list, alloc_raw: dict) -> dict:
         "allocation": allocation,   # {agent_id: [goal_index, ...]}
         "paths": solver.Solution[0],
         "cost": solver.Solution[5],
+        # How many k-best allocations the framework generated before CBS
+        # succeeded (1 = first allocation was enough).  Always 1 on the
+        # fixed-allocation path.
+        "k_roots": solver.Solution[3],
+        "resolved_conflicts": solver.Solution[4],
     }

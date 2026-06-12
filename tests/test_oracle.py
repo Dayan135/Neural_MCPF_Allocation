@@ -27,7 +27,7 @@ def open_5x5():
 def test_run_basic_mapf_allocation_format(open_5x5):
     result = run_basic_mapf(open_5x5, AGENTS, GOALS, config_str="test_format")
 
-    assert set(result) == {"allocation", "paths", "cost"}
+    assert set(result) == {"allocation", "paths", "cost", "k_roots", "resolved_conflicts"}
     # allocation maps each agent to a (possibly empty) list of goal indices
     for agent_id, goal_indices in result["allocation"].items():
         assert isinstance(goal_indices, list)
