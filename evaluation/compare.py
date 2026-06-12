@@ -64,8 +64,13 @@ def main():
         ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         run_args = ckpt["args"]
 
-        # Data dir: use per-run data_dir if it exists, else fall back to CLI arg
-        data_dir = run_args.get("data_dir", args.data_dir)
+        # Data dir: use per-run data_dir if it exists, else fall back to CLI arg.
+        # Mixed-trained (universal) checkpoints store an unused default data_dir,
+        # so for them the CLI arg always wins.
+        if run_args.get("mixed", False):
+            data_dir = args.data_dir
+        else:
+            data_dir = run_args.get("data_dir", args.data_dir)
         split_dir = os.path.join(data_dir, args.split)
         if not os.path.isdir(split_dir):
             data_dir = args.data_dir
