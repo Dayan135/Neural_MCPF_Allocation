@@ -211,6 +211,35 @@ patterns. Only regression is the easiest config (N=2). Mean cost ratio ~0.99 eve
 inference ~0.06 ms/instance. Caveat: not data-matched vs baselines (15k/config vs 10k, plus
 225k total cross-config transfer). Training is fast: ~25 min/seed on rtx3090 for 100 epochs.
 
+Full 15-config matrix (full-assignment accuracy, 3 seeds, std ≤ 0.010 everywhere):
+
+| N \ M | 2 | 3 | 4 | 5 | 6 |
+|-------|---|---|---|---|---|
+| 2 | 0.913 | 0.874 | 0.755 | 0.632 | 0.558 |
+| 3 | 0.873 | 0.810 | 0.708 | 0.585 | 0.483 |
+| 4 | 0.832 | 0.775 | 0.656 | 0.553 | 0.435 |
+
+Accuracy decays with M (more goals = more per-goal decisions that must all be right) and is
+nearly symmetric in N. M>N (multi-goal tours) is harder than M<N (idle agents): n2m6 0.558 vs
+n4m2 0.832 (per-goal: M dominates difficulty). Offline cost ratios (Σ Y·D metric) stay 0.97–1.00.
+
+### Exp 8 — full-pipeline NN-vs-solver (universal_s0, 2026-06-12)
+
+`evaluation/pipeline_eval.py`: NN argmax allocation → tour cost (D first hop + G goal-goal hops,
+optimal per-agent goal order; same metric applied to the solver's allocation for an
+apples-to-apples ratio). Solver wall-time measured on 50 reconstructed instances per config.
+
+| Config | Full acc | Tour-cost ratio | NN ms | Solver ms | Speedup |
+|--------|---------|-----------------|-------|-----------|---------|
+| n3m3 | 0.809 | 1.010 | 0.052 | 64.5 | ~1250× |
+| n2m4 | 0.754 | 1.026 | 0.058 | 43.9 | ~760× |
+| n4m6 | 0.442 | 1.056 | 0.233 | 59.7 | ~260× |
+
+**The case for the NN**: even where exact-match accuracy drops to 0.44 (n4m6), the tour cost is
+only 5.6% above optimal — most "wrong" assignments are near-ties. Three orders of magnitude
+faster than the solver at 1–6% cost suboptimality. NN time is batched amortized (batch=512);
+single-instance latency would be higher but still ≫100× faster.
+
 ## Tests
 
 ```bash
