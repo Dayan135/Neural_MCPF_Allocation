@@ -37,6 +37,14 @@ start; `--num_agents` / `--grid_w` / `--grid_h` make this configurable for scale
 - `L_CE = -(1/M) Σ_j Σ_i Y[i,j]·log P[i,j]` — per-goal cross-entropy over agents (mimic solver).
 - `L_MinSum = (1/M) Σ P[i,j]·D[i,j]` — expected assignment cost (penalize distant allocations).
 
+**Possible future change:** L_MinSum is only a first-hop proxy — no tour chaining (G), no
+collisions; the real MCPF min-sum enters training only indirectly through Y. Candidate upgrade:
+bring the solver's true min-sum cost into the loss. The solver cost is already computed during
+data generation (`get_ground_truth` returns `(Y, cost)`) but `build_dataset.py` currently
+discards it — storing it per sample is a one-line change. Options: tour-aware MinSum term
+(`Σ_{j,k} (Σ_i P[i,j]·P[i,k])·G[j,k]` — penalize splitting nearby goals), or cost-gap-weighted
+CE using the stored solver cost. CBS execution cost itself is not differentiable.
+
 ## Layout
 
 | Path | Role |
