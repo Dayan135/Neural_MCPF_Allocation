@@ -18,12 +18,35 @@ import sys
 REPO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "RobustMCPF")
 
 
+class _BudgetExceeded(Exception):
+    pass
+
+
+def _apply_node_budget(solver, n: int) -> None:
+    """Wrap solver.OPEN.get so CBS raises _BudgetExceeded after n expansions.
+
+    Needed because CBS does not terminate on truly over-constrained problems —
+    it accumulates ever-larger time constraints forever (observed at high wall
+    densities and with infeasible fixed allocations)."""
+    budget = {"left": n}
+    orig_get = solver.OPEN.get
+
+    def bounded_get(*a, **kw):
+        if budget["left"] <= 0:
+            raise _BudgetExceeded()
+        budget["left"] -= 1
+        return orig_get(*a, **kw)
+
+    solver.OPEN.get = bounded_get
+
+
 def run_basic_mapf(
     map_dims: dict,
     agents: list,
     goals: list,
     config_str: str | None = None,
-) -> dict:
+    cbs_node_budget: int | None = None,
+) -> dict | None:
     """
     Run the RobustMCPF solver in BasicMAPF (basic, no-delay, no-orientation) mode.
 
@@ -37,10 +60,15 @@ def run_basic_mapf(
         Goal locations.
     config_str : str, optional
         Unique identifier for LKH temp files.  Defaults to PID-based string.
+    cbs_node_budget : int, optional
+        Max CBS node expansions before giving up (None = unbounded, the
+        historical behavior).  Dense-wall instances can be reachable by BFS
+        yet so constraint-heavy that CBS never terminates; a budget converts
+        that hang into a rejection.
 
     Returns
     -------
-    dict with keys:
+    dict with keys (or None if the node budget was exceeded):
         "allocation" : {agent_id (int): goal_index (int)}
             goal_index is the position of the assigned goal in `goals`.
         "paths"      : {agent_id: [(loc, dir), ...]}  collision-free paths
@@ -51,7 +79,7 @@ def run_basic_mapf(
 
     def factory(framework_cls):
         N = len(agents)
-        return framework_cls(
+        kwargs = dict(
             Positions=agents,
             GoalLocations=goals,
             no_collision_prob=1.0,
@@ -61,8 +89,22 @@ def run_basic_mapf(
             algorithm="BasicMAPF",
             configStr=config_str,
         )
+        if cbs_node_budget is None:
+            return framework_cls(**kwargs)
+
+        class _BudgetedCbss(framework_cls):
+            def run(self):
+                _apply_node_budget(self, cbs_node_budget)
+                return super().run()
+
+        try:
+            return _BudgetedCbss(**kwargs)
+        except _BudgetExceeded:
+            return None
 
     solver = _in_solver_cwd(lambda: factory(_framework_cls()))
+    if solver is None or solver.Solution is None:
+        return None
     return _build_result(solver, goals, solver.K_optimal_sequences[1]["Allocations"])
 
 
@@ -100,9 +142,6 @@ def run_basic_mapf_with_allocation(
     def build():
         base = _framework_cls()
 
-        class _BudgetExceeded(Exception):
-            pass
-
         class _FixedAllocCbss(base):
             """Pins K_optimal_sequences[1] to the supplied allocation.
 
@@ -124,18 +163,7 @@ def run_basic_mapf_with_allocation(
                     "Cost": 10**9,
                 }
                 self.K_Best_Seq_Solver.find_k_best_solution = lambda k: seq
-
-                # Bound CBS node expansions via the OPEN queue's get().
-                budget = {"left": cbs_node_budget}
-                orig_get = self.OPEN.get
-
-                def bounded_get(*a, **kw):
-                    if budget["left"] <= 0:
-                        raise _BudgetExceeded()
-                    budget["left"] -= 1
-                    return orig_get(*a, **kw)
-
-                self.OPEN.get = bounded_get
+                _apply_node_budget(self, cbs_node_budget)
                 return super().run()
 
         N = len(agents)

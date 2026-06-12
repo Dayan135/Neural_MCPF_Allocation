@@ -40,6 +40,17 @@ def test_run_basic_mapf_every_goal_assigned_once(open_5x5):
     assert sorted(assigned) == list(range(len(GOALS)))
 
 
+def test_run_basic_mapf_budget_exhaustion_returns_none(open_5x5):
+    result = run_basic_mapf(open_5x5, AGENTS, GOALS, config_str="test_budget",
+                            cbs_node_budget=0)
+    assert result is None
+
+
+def test_run_basic_mapf_no_budget_unchanged(open_5x5):
+    result = run_basic_mapf(open_5x5, AGENTS, GOALS, config_str="test_nobudget")
+    assert result is not None and result["cost"] > 0
+
+
 def test_run_basic_mapf_positive_cost(open_5x5):
     result = run_basic_mapf(open_5x5, AGENTS, GOALS, config_str="test_cost")
     assert np.isfinite(result["cost"])

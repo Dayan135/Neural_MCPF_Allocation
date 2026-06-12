@@ -22,17 +22,25 @@ def get_ground_truth(
     agents: list,
     goals: list,
     config_str: str | None = None,
+    cbs_node_budget: int | None = 50_000,
 ) -> tuple[np.ndarray, int] | None:
     """
     Run RobustMCPF in BasicMAPF mode and extract the optimal assignment matrix Y.
 
     Y[i][j] = 1.0  iff the solver assigned agent i to goal j (0-indexed into `goals`).
 
+    cbs_node_budget bounds CBS work per instance: dense-wall instances can be
+    BFS-reachable yet so constraint-heavy that CBS never terminates.  Budget
+    exhaustion rejects the instance (same as unreachable goals).
+
     Returns (Y, total_cost) on success, or None if the solver fails / raises.
     """
     try:
-        result = run_basic_mapf(map_dims, agents, goals, config_str=config_str)
+        result = run_basic_mapf(map_dims, agents, goals, config_str=config_str,
+                                cbs_node_budget=cbs_node_budget)
     except Exception:
+        return None
+    if result is None:
         return None
 
     N = len(agents)
