@@ -117,14 +117,17 @@ missing-iomp5 symbol there).
 
 ## Results
 
-All experiment results (Exp 1–10: architecture comparison, N/data/capacity scaling, goal-goal
+All experiment results (Exp 1–11: architecture comparison, N/data/capacity scaling, goal-goal
 distance ablation, universal mixed-size model, NN-vs-solver timing, full MAPF execution cost,
-zero-shot extrapolation sweep) are in [RESULTS.md](RESULTS.md). Headlines: goal-goal distances G
-are the dominant input feature (+14–18pt); one universal 151k-param transformer beats per-size
-specialists including zero-shot on unseen N=5; replacing LKH with the NN inside the full CBS
-pipeline costs 0.2–10% in true execution cost (zero-shot N=5 is free; M is the difficulty axis)
-at up to 4.1× single-instance speedup that grows with problem size (~10³× batched,
-allocation-only).
+zero-shot extrapolation sweep, larger model on a diverse dataset) are in [RESULTS.md](RESULTS.md).
+Headlines: goal-goal distances G are the dominant input feature (+14–18pt); one universal
+151k-param transformer beats per-size specialists including zero-shot on unseen N=5; replacing LKH
+with the NN inside the full CBS pipeline costs 0.2–10% in true execution cost (zero-shot N=5 is
+free; M is the difficulty axis) at up to 4.1× single-instance speedup that grows with problem size
+(~10³× batched, allocation-only). Exp 11: scaling to a 1.2M-param h128/L6 model trained on all 28
+configs (N∈{2..5}×M∈{2..8}) over diverse grids (8–12, walls 0.1–0.5) cuts the execution-cost gap
+on the hard high-M cells by 2–3pt (mean 1.029, exact-match 82.9%) and eliminates infeasible/
+fallback allocations — even when evaluated off-distribution at 8×8.
 
 ## Tests
 

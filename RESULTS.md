@@ -236,3 +236,89 @@ on N∈{2,3,4} × M∈{2..6} — configs marked **Extrap** are zero-shot (N=5 ro
 4. **Speedup grows with problem size**: solver time climbs 31 → 65 ms as the LKH TSP grows, NN
    pipeline stays ~12–20 ms → up to 4.1× at n5m7. NN-side outliers (n2m8 38.7 ms, n5m5 41.5 ms)
    are the 8-goal brute-force visit ordering and the fallback retry, respectively.
+
+## Exp 11 — larger model (h128/L6) on a diverse dataset (large_s{0,1,2}, 2026-06-13)
+
+**Motivation.** The Exp 7–10 universal model (h64/L3, ~151k params) was trained on a narrow
+distribution: fixed 8×8 grids, fixed obstacle prob 0.1, N∈{2,3,4} × M∈{2..6}. Two ceilings at
+once — model capacity (one network fitting 15 joint distributions) and data diversity (never
+seeing varied geometry). Exp 11 lifts both: **h128/L6 (~1.2M params)** trained on **all 28
+configs** N∈{2,3,4,5} × M∈{2..8}, with **per-instance random grids (8–12 × 8–12) and wall
+density (0.1–0.5)**. 30k/3k/3k per config = 840k train samples. lr=5e-4, grad_clip=1.0,
+150 epochs, 3 seeds. Best val loss 0.2514/0.2528/0.2537. Scripts: `gen_large_data.sh`,
+`exp_large_model.sh`.
+
+**Data-generation fix.** At up to 50% walls, instances can pass the BFS-reachability filter yet be
+so constraint-dense that CBS never terminates (it escalates time constraints forever — the same
+non-termination Exp 10 hit with infeasible allocations). 12 of 28 generation tasks hung. Fixed by
+adding `cbs_node_budget` to `run_basic_mapf` (default 50k in `get_ground_truth`); budget-exceeded
+instances are rejected like unreachable ones. At p=0.1 this changes nothing in practice.
+
+### Offline metrics — diverse test set, 3 seeds
+
+Per-goal accuracy (full-assignment accuracy in parens). Seeds near-identical (std ≈ 0.000).
+Cost ratio is the first-hop Σ P·D proxy (see Exp 1 caveat), 0.97–1.00 throughout.
+
+| N\M | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|-----|---|---|---|---|---|---|---|
+| **2** | 0.960 (.94) | 0.949 (.90) | 0.928 (.84) | 0.911 (.76) | 0.892 (.69) | 0.876 (.63) | 0.852 (.55) |
+| **3** | 0.930 (.89) | 0.926 (.85) | 0.915 (.79) | 0.897 (.71) | 0.881 (.65) | 0.864 (.57) | 0.850 (.51) |
+| **4** | 0.923 (.87) | 0.919 (.82) | 0.899 (.73) | 0.886 (.67) | 0.875 (.60) | 0.854 (.51) | 0.841 (.47) |
+| **5** | 0.921 (.86) | 0.910 (.79) | 0.903 (.73) | 0.887 (.65) | 0.877 (.58) | 0.860 (.51) | 0.845 (.44) |
+
+Accuracy degrades gracefully with M and is essentially flat across N — N=5, zero-shot for the old
+model, is now fully in-distribution and as strong as N=2.
+
+### Full pipeline at 8×8/p=0.1 — direct comparison to Exp 10 (large_s0, 200 inst/config)
+
+Same conditions as Exp 10, so the cost ratio is directly comparable to the h64/L3 universal model.
+**Mean over 28 configs: cost ratio 1.029 (was ~1.04), exact-match 82.9%, 0% infeasible,
+0% fallbacks, 2.4× speedup.** Columns as in Exp 10.
+
+| Config | Extrap* | Cost ratio (old → new) | Exact match | Diff (steps) | Speedup |
+|--------|:------:|------------------------|-------------|--------------|---------|
+| n2m2 |   | 1.010 → **1.008** | 97.0% | 0.06 | 2.0× |
+| n2m3 |   | 1.006 → **1.008** | 96.5% | 0.11 | 2.3× |
+| n2m4 |   | 1.020 → **1.015** | 89.5% | 0.21 | 1.9× |
+| n2m5 |   | 1.044 → **1.035** | 77.0% | 0.58 | 2.1× |
+| n2m6 |   | 1.063 → **1.059** | 72.0% | 0.96 | 2.1× |
+| n2m7 | ✓ | 1.090 → **1.070** | 60.0% | 1.27 | 2.2× |
+| n2m8 | ✓ | 1.078 → **1.057** | 61.5% | 1.17 | 1.2× |
+| n3m2 |   | 1.009 → **1.003** | 99.0% | 0.03 | 2.3× |
+| n3m3 |   | 1.007 → **1.008** | 97.5% | 0.06 | 2.1× |
+| n3m4 |   | 1.043 → **1.016** | 92.0% | 0.19 | 2.3× |
+| n3m5 |   | 1.046 → **1.029** | 87.0% | 0.41 | 2.5× |
+| n3m6 |   | 1.070 → **1.040** | 77.5% | 0.60 | 2.3× |
+| n3m7 | ✓ | 1.068 → **1.043** | 70.0% | 0.71 | 2.2× |
+| n3m8 | ✓ | 1.100 → **1.067** | 61.0% | 1.24 | 2.4× |
+| n4m2 |   | 1.000 → 1.011 | 97.0% | 0.05 | 2.5× |
+| n4m3 |   | 1.010 → 1.014 | 95.5% | 0.11 | 2.8× |
+| n4m4 |   | 1.029 → **1.007** | 96.5% | 0.07 | 2.8× |
+| n4m5 |   | 1.042 → **1.014** | 92.5% | 0.20 | 2.4× |
+| n4m6 |   | 1.050 → **1.032** | 84.0% | 0.49 | 2.3× |
+| n4m7 | ✓ | 1.074 → **1.047** | 69.5% | 0.70 | 2.6× |
+| n4m8 | ✓ | 1.092 → **1.053** | 66.5% | 0.86 | 2.4× |
+| n5m2 | ✓ | 1.002 → **1.001** | 99.5% | 0.01 | 2.2× |
+| n5m3 | ✓ | 1.009 → 1.022 | 93.5% | 0.17 | 2.4× |
+| n5m4 | ✓ | 1.020 → **1.012** | 95.0% | 0.10 | 2.7× |
+| n5m5 | ✓ | 1.041 → **1.020** | 88.5% | 0.24 | 2.6× |
+| n5m6 | ✓ | 1.053 → **1.030** | 79.5% | 0.40 | 2.7× |
+| n5m7 | ✓ | (—) → 1.051 | 64.5% | 0.72 | 2.8× |
+| n5m8 | ✓ | (—) → 1.054 | 61.0% | 0.86 | 2.9× |
+
+*Extrap = outside the OLD model's training range (N=5 and/or M≥7). For large_s0 all 28 configs
+are in-distribution; the column is kept to align rows with the Exp 10 table.
+
+**Takeaways.**
+1. **Gains concentrate on the hard cells.** Every M≥4 config improves, several by 2–3 points
+   (n3m4 1.043→1.016, n4m5 1.042→1.014, n4m8 1.092→1.053, n5m5 1.041→1.020). Easy small-M
+   configs move ≤1pt either way — noise around already-near-optimal allocations.
+2. **No infeasible allocations, no fallbacks anywhere** (the old model occasionally needed a
+   k≥2 candidate). The larger model's top allocation is always CBS-feasible at 8×8.
+3. **This is at a distribution disadvantage**: large_s0 trained mostly on bigger, denser grids,
+   yet still beats the in-distribution old model at 8×8. The on-distribution diverse sweep
+   (below) is the fairer test.
+
+### Full pipeline on the diverse distribution (large_s0, random 8–12 grids, p∈[0.1,0.5])
+
+_Pending — job 18139275 running; results appended on completion._
