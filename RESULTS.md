@@ -366,3 +366,17 @@ M remains the difficulty axis (ratio and exact-match track M, roughly flat in N)
 (n2m8, ratio 1.051) is still within ~5% of optimal execution cost. The two low speedups (n4m5 0.6×,
 n5m5 1.1×) are single instances where the brute-force goal-visit ordering hit a 7-goal agent — the
 NN allocation itself is sub-millisecond; the cost is in the classical ordering step, not the model.
+
+### Raw data
+
+Both pipeline sweeps wrote a per-instance CSV per config (200 rows each), so every aggregate above
+is reconstructible per-instance and new statistics (std, percentiles, per-instance diffs) need no
+re-run. **On the cluster only** (`results/` is git-ignored — generated artifacts, not committed):
+
+- `results/fullpipe_large/n{N}m{M}.csv` — 8×8/p=0.1 sweep (28 files)
+- `results/fullpipe_large_diverse/n{N}m{M}.csv` — diverse-grid sweep (28 files)
+- Columns: `inst_seed, cost_nn, cost_solver, nn_k, solver_k, conflicts_nn, conflicts_solver,
+  alloc_ms, nn_plan_ms, solver_ms`
+
+Aggregate job logs: `logs/eval_large_18139134.out` (offline — per-config only, no per-instance CSV),
+`logs/fullpipe_large_18139135.out` (8×8), `logs/fp_large_div_18139275.out` (diverse).

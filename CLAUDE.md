@@ -129,6 +129,13 @@ configs (N∈{2..5}×M∈{2..8}) over diverse grids (8–12, walls 0.1–0.5) cu
 on the hard high-M cells by 2–3pt (mean 1.029, exact-match 82.9%) and eliminates infeasible/
 fallback allocations — even when evaluated off-distribution at 8×8.
 
+**Raw eval data** (per-instance CSVs, 200 rows/config) lives **on the cluster only** — `results/`
+is git-ignored. Exp 11 sweeps: `results/fullpipe_large/` (8×8) and `results/fullpipe_large_diverse/`
+(diverse grids), 28 configs each; columns `inst_seed, cost_nn, cost_solver, nn_k, solver_k,
+conflicts_nn, conflicts_solver, alloc_ms, nn_plan_ms, solver_ms`. Aggregate job logs in `logs/`.
+The offline-metrics eval has no per-instance CSV (per-config aggregates in the log only). See the
+Raw data section in [RESULTS.md](RESULTS.md) for exact paths and job IDs.
+
 ## Tests
 
 ```bash
