@@ -111,12 +111,25 @@ def main():
     parser.add_argument("--num_agents", type=int, default=3)
     parser.add_argument("--num_goals", type=int, default=None)
     parser.add_argument("--obstacle_prob", type=float, default=0.1)
+    parser.add_argument("--grid_w_max", type=int, default=None,
+                        help="if set, grid width is sampled per instance from "
+                             "[grid_w, grid_w_max]")
+    parser.add_argument("--grid_h_max", type=int, default=None,
+                        help="if set, grid height is sampled per instance from "
+                             "[grid_h, grid_h_max]")
+    parser.add_argument("--obstacle_prob_max", type=float, default=None,
+                        help="if set, obstacle prob is sampled per instance from "
+                             "[obstacle_prob, obstacle_prob_max]")
     parser.add_argument("--n_instances", type=int, default=200)
     parser.add_argument("--seed", type=int, default=987654321,
                         help="instance-stream seed (distinct from training seeds)")
     parser.add_argument("--max_fallbacks", type=int, default=3,
                         help="NN allocation candidates to try (ranked by joint "
                              "probability) before declaring the instance infeasible")
+    parser.add_argument("--solver_node_budget", type=int, default=50_000,
+                        help="CBS node budget for the full solver; instances the "
+                             "solver cannot finish within it are skipped (dense "
+                             "mazes can otherwise hang CBS)")
     parser.add_argument("--csv", type=str, default=None,
                         help="optional path for a per-instance CSV dump, so new "
                              "aggregate stats can be computed without re-running")
@@ -131,16 +144,27 @@ def main():
 
     rng = np.random.default_rng([args.seed, args.num_agents, num_goals])
 
+    def draw_dims():
+        """Per-instance (w, h, obstacle_prob): a single point when no _max flag
+        is set, otherwise sampled uniformly over the requested ranges."""
+        w = int(rng.integers(args.grid_w, args.grid_w_max + 1)) if args.grid_w_max else args.grid_w
+        h = int(rng.integers(args.grid_h, args.grid_h_max + 1)) if args.grid_h_max else args.grid_h
+        p = float(rng.uniform(args.obstacle_prob, args.obstacle_prob_max)) if args.obstacle_prob_max else args.obstacle_prob
+        return w, h, p
+
     # Warm-up: first solver calls pay one-time module imports (~0.5 s),
     # which would otherwise pollute the per-instance timing of instance 0.
     while True:
-        warm_seed = int(rng.integers(0, 2**31))
-        warm = generate_instance(args.grid_w, args.grid_h, args.num_agents,
-                                 num_goals, args.obstacle_prob, warm_seed)
-        if warm is not None:
+        w, h, p = draw_dims()
+        warm = generate_instance(w, h, args.num_agents, num_goals, p,
+                                 int(rng.integers(0, 2**31)))
+        if warm is None:
+            continue
+        w_map, w_agents, w_goals, _, _ = warm
+        warm_ref = run_basic_mapf(w_map, w_agents, w_goals, config_str="fp_warm_sv",
+                                  cbs_node_budget=args.solver_node_budget)
+        if warm_ref is not None:
             break
-    w_map, w_agents, w_goals, _, _ = warm
-    warm_ref = run_basic_mapf(w_map, w_agents, w_goals, config_str="fp_warm_sv")
     warm_alloc = {a: [w_goals[g] for g in gi] for a, gi in warm_ref["allocation"].items()}
     run_basic_mapf_with_allocation(w_map, w_agents, w_goals, warm_alloc,
                                    config_str="fp_warm_nn")
@@ -150,26 +174,26 @@ def main():
     fallback_counts, solver_k_list = [], []
     nn_conflicts_list, solver_conflicts_list = [], []
     csv_rows = []
-    n_done, attempts, n_infeasible = 0, 0, 0
+    n_done, attempts, n_infeasible, n_solver_skip = 0, 0, 0, 0
 
     while n_done < args.n_instances:
         inst_seed = int(rng.integers(0, 2**31))
         attempts += 1
-        inst = generate_instance(
-            args.grid_w, args.grid_h, args.num_agents, num_goals,
-            args.obstacle_prob, inst_seed,
-        )
+        w, h, p = draw_dims()
+        inst = generate_instance(w, h, args.num_agents, num_goals, p, inst_seed)
         if inst is None:
             continue
         map_dims, agents, goals, D_raw, G_raw = inst
+        # Normalize by this instance's own dimensions (they vary when ranges are set).
+        inst_w, inst_h = map_dims["Cols"], map_dims["Rows"]
 
         # --- NN allocation (+ goal ordering) ---
         t0 = time.perf_counter()
-        D_norm = normalize_D(D_raw, args.grid_w, args.grid_h)
+        D_norm = normalize_D(D_raw, inst_w, inst_h)
         D_t = torch.from_numpy(D_norm).float()[None].to(device)
         G_t = None
         if use_goal_dists:
-            G_norm = normalize_D(G_raw, args.grid_w, args.grid_h)
+            G_norm = normalize_D(G_raw, inst_w, inst_h)
             G_t = torch.from_numpy(G_norm).float()[None].to(device)
         with torch.no_grad():
             P = (model(D_t, G=G_t) if G_t is not None else model(D_t))[0].cpu().numpy()
@@ -201,15 +225,22 @@ def main():
             n_infeasible += 1
             n_done += 1
             continue
-        fallback_counts.append(fallbacks_used)
 
         # --- Full solver (LKH + CBS) ---
         t0 = time.perf_counter()
         solver_result = run_basic_mapf(
             map_dims, agents, goals, config_str=f"fp_sv_{n_done}",
+            cbs_node_budget=args.solver_node_budget,
         )
         solver_ms = (time.perf_counter() - t0) * 1000.0
 
+        # Solver couldn't finish within budget — degenerate instance, no ground
+        # truth to compare against, so discard it (don't count toward n_done).
+        if solver_result is None:
+            n_solver_skip += 1
+            continue
+
+        fallback_counts.append(fallbacks_used)
         cost_nn_list.append(nn_result["cost"])
         cost_solver_list.append(solver_result["cost"])
         alloc_ms_list.append(alloc_ms)
@@ -237,6 +268,8 @@ def main():
           f"{n_done} instances, {attempts} attempts) ---")
     print(f"  infeasible_rate       : {n_infeasible / n_done:.4f} "
           f"({n_infeasible} of {n_done}, after {args.max_fallbacks} candidates)")
+    print(f"  solver_skipped        : {n_solver_skip} (solver exceeded "
+          f"{args.solver_node_budget}-node budget; excluded)")
     print(f"  fallback_rate         : {np.mean(np.array(fallback_counts) > 0):.4f} "
           f"(mean fallbacks {np.mean(fallback_counts):.3f})")
 
