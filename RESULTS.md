@@ -321,4 +321,48 @@ there is no extrapolation column. `(—)` = config absent from the Exp 10 table 
 
 ### Full pipeline on the diverse distribution (large_s0, random 8–12 grids, p∈[0.1,0.5])
 
-_Pending — job 18139275 running; results appended on completion._
+The fair test: 200 instances/config drawn from the model's own training distribution (grid size
+and wall density sampled per instance, via the new `--grid_w_max/--grid_h_max/--obstacle_prob_max`
+flags in `full_pipeline_eval.py`). The 50k-node solver budget guards against dense-maze CBS hangs.
+
+**Mean over 28 configs: cost ratio 1.020, exact-match 85.0%, 0% infeasible, 0% fallbacks,
+0 solver-skipped, 2.1× speedup.** On-distribution the model is *better* than at 8×8 (1.020 vs
+1.029) — the off-distribution penalty in the comparison table above is real but small. The budget
+never fired (0 skipped across all 5,600 instances), so these diverse grids, while harder, are not
+pathological for the solver.
+
+| Config | Cost ratio | Exact match | Diff (steps) | Speedup |
+|--------|-----------|-------------|--------------|---------|
+| n2m2 | 1.005 | 99.0% | 0.04 | 1.9× |
+| n2m3 | 1.008 | 97.5% | 0.12 | 1.9× |
+| n2m4 | 1.010 | 93.5% | 0.17 | 1.7× |
+| n2m5 | 1.018 | 85.0% | 0.42 | 1.8× |
+| n2m6 | 1.028 | 80.5% | 0.66 | 2.1× |
+| n2m7 | 1.035 | 74.5% | 0.81 | 2.1× |
+| n2m8 | 1.051 | 66.5% | 1.39 | 1.3× |
+| n3m2 | 1.004 | 99.0% | 0.04 | 2.2× |
+| n3m3 | 1.005 | 96.0% | 0.06 | 1.9× |
+| n3m4 | 1.011 | 93.5% | 0.17 | 2.1× |
+| n3m5 | 1.024 | 82.0% | 0.49 | 2.0× |
+| n3m6 | 1.027 | 82.5% | 0.55 | 2.3× |
+| n3m7 | 1.027 | 73.5% | 0.55 | 2.1× |
+| n3m8 | 1.044 | 65.0% | 1.08 | 2.1× |
+| n4m2 | 1.003 | 99.0% | 0.02 | 2.6× |
+| n4m3 | 1.002 | 98.5% | 0.02 | 2.2× |
+| n4m4 | 1.007 | 93.5% | 0.09 | 2.3× |
+| n4m5 | 1.015 | 89.5% | 0.25 | 0.6× |
+| n4m6 | 1.033 | 79.5% | 0.63 | 2.3× |
+| n4m7 | 1.039 | 72.5% | 0.81 | 2.4× |
+| n4m8 | 1.042 | 63.5% | 0.97 | 2.7× |
+| n5m2 | 1.004 | 98.5% | 0.02 | 2.3× |
+| n5m3 | 1.008 | 96.0% | 0.08 | 2.4× |
+| n5m4 | 1.010 | 93.0% | 0.15 | 2.5× |
+| n5m5 | 1.016 | 89.5% | 0.22 | 1.1× |
+| n5m6 | 1.018 | 83.0% | 0.34 | 2.3× |
+| n5m7 | 1.035 | 73.0% | 0.67 | 2.8× |
+| n5m8 | 1.039 | 63.5% | 0.83 | 2.7× |
+
+M remains the difficulty axis (ratio and exact-match track M, roughly flat in N); the worst cell
+(n2m8, ratio 1.051) is still within ~5% of optimal execution cost. The two low speedups (n4m5 0.6×,
+n5m5 1.1×) are single instances where the brute-force goal-visit ordering hit a 7-goal agent — the
+NN allocation itself is sub-millisecond; the cost is in the classical ordering step, not the model.
