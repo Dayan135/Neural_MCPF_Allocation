@@ -15,7 +15,7 @@
 #SBATCH --account=erant
 #SBATCH --qos=normal
 #SBATCH --time=16:00:00
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:rtx_3090:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --output=/home/dayanb/course_multiagent/Neural_MCPF_Allocation/logs/paper_larger_%A_%a.out
@@ -27,6 +27,8 @@ PROJECT=/home/dayanb/course_multiagent/Neural_MCPF_Allocation
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate mcpf_env
 export MKL_THREADING_LAYER=GNU
+# h256/L8 needs a 24GB card (OOMs on the 10.5GB rtx_2080); reduce fragmentation too.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 SEED=$SLURM_ARRAY_TASK_ID
 
