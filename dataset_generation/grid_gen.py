@@ -6,8 +6,41 @@ but is inlined here because GenerateInstances.py runs map-loading code at module
 making it impossible to import from without side effects.
 """
 
+import os
 import random
 import numpy as np
+
+# Benchmark maps vendored with RobustMCPF (MovingAI octile format).
+MAPS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "RobustMCPF", "Maps")
+
+
+def load_map_file(name_or_path: str) -> dict:
+    """
+    Load a MovingAI octile .map file into a MapAndDims dict.
+
+    Mirrors RobustMCPF/GenerateInstances.read_map_file: skips the header up to
+    the "map" line, then '.' -> 0 (free), any other char (e.g. '@', 'T') -> 1
+    (obstacle). A bare filename is resolved against the vendored Maps/ dir;
+    anything containing a path separator is used as-is.
+
+    Returns {"Rows": H, "Cols": W, "Map": [0/1, ...]}, the same format as
+    generate_random_map.
+    """
+    path = name_or_path if os.sep in name_or_path else os.path.join(MAPS_DIR, name_or_path)
+    with open(path, "r") as f:
+        lines = f.readlines()
+
+    map_start = lines.index("map\n") + 1
+    map_lines = [ln.rstrip("\n") for ln in lines[map_start:] if ln.strip() != ""]
+
+    flat = []
+    rows = 0
+    cols = 0
+    for line in map_lines:
+        cols = len(line)
+        rows += 1
+        flat.extend(0 if ch == "." else 1 for ch in line)
+    return {"Rows": rows, "Cols": cols, "Map": flat}
 
 
 def generate_random_map(W: int, H: int, obstacle_prob: float = 0.1, seed=None) -> dict:
