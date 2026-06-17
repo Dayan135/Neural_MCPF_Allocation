@@ -138,9 +138,19 @@ def main():
     parser.add_argument("--csv", type=str, default=None,
                         help="optional path for a per-instance CSV dump, so new "
                              "aggregate stats can be computed without re-running")
+    parser.add_argument("--tag", type=str, default=None,
+                        help="unique prefix for this run's LKH temp files (configStr). "
+                             "Required when many evals run concurrently in the shared "
+                             "RobustMCPF dir — pass e.g. ${SLURM_ARRAY_JOB_ID}_"
+                             "${SLURM_ARRAY_TASK_ID}. Defaults to the pid (only safe "
+                             "for a single host).")
     args = parser.parse_args()
 
     num_goals = args.num_goals if args.num_goals is not None else args.num_agents
+
+    # All LKH temp files are named ATSP_runtime_files/{configStr}_Mtsp.* in the shared
+    # RobustMCPF dir, so configStr must be unique across concurrent processes.
+    run_tag = args.tag if args.tag else str(os.getpid())
 
     fixed_map = load_map_file(args.map_file) if args.map_file is not None else None
 
@@ -168,13 +178,14 @@ def main():
         if warm is None:
             continue
         w_map, w_agents, w_goals, _, _ = warm
-        warm_ref = run_basic_mapf(w_map, w_agents, w_goals, config_str="fp_warm_sv",
+        warm_ref = run_basic_mapf(w_map, w_agents, w_goals,
+                                  config_str=f"fp_{run_tag}_warm_sv",
                                   cbs_node_budget=args.solver_node_budget)
         if warm_ref is not None:
             break
     warm_alloc = {a: [w_goals[g] for g in gi] for a, gi in warm_ref["allocation"].items()}
     run_basic_mapf_with_allocation(w_map, w_agents, w_goals, warm_alloc,
-                                   config_str="fp_warm_nn")
+                                   config_str=f"fp_{run_tag}_warm_nn")
 
     cost_nn_list, cost_solver_list = [], []
     alloc_ms_list, nn_plan_ms_list, solver_ms_list = [], [], []
@@ -222,7 +233,7 @@ def main():
                 ordered_allocation[agent_idx] = [goals[g] for g in order]
             nn_result = run_basic_mapf_with_allocation(
                 map_dims, agents, goals, ordered_allocation,
-                config_str=f"fp_nn_{n_done}_{cand_idx}",
+                config_str=f"fp_{run_tag}_nn_{n_done}_{cand_idx}",
             )
             if nn_result is not None:
                 fallbacks_used = cand_idx
@@ -237,7 +248,7 @@ def main():
         # --- Full solver (LKH + CBS) ---
         t0 = time.perf_counter()
         solver_result = run_basic_mapf(
-            map_dims, agents, goals, config_str=f"fp_sv_{n_done}",
+            map_dims, agents, goals, config_str=f"fp_{run_tag}_sv_{n_done}",
             cbs_node_budget=args.solver_node_budget,
         )
         solver_ms = (time.perf_counter() - t0) * 1000.0

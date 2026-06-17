@@ -12,7 +12,7 @@
 #SBATCH --partition=cpu
 #SBATCH --account=erant
 #SBATCH --qos=normal
-#SBATCH --time=02:00:00
+#SBATCH --time=06:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --output=/home/dayanb/course_multiagent/Neural_MCPF_Allocation/logs/eval_current_%A_%a.out
@@ -49,6 +49,7 @@ python evaluation/full_pipeline_eval.py \
     --map_file "${MAP}.map" \
     --num_agents "$N" --num_goals "$M" \
     --n_instances 200 --seed 987654321 \
+    --tag "${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}" \
     --csv "$PROJECT/results/fullpipe_paper/current/${MAP}_n${N}m${M}.csv"
 
 echo "Done: map=$MAP N=$N M=$M"
