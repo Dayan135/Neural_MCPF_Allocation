@@ -31,7 +31,7 @@ for p in (_ROOT, os.path.join(_ROOT, "dataset_generation")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from grid_gen import generate_random_map, sample_agents_goals
+from grid_gen import generate_random_map, load_map_file, sample_agents_goals
 from distance import compute_distance_matrix, compute_goal_distance_matrix, normalize_D
 from solver_wrapper import run_basic_mapf, run_basic_mapf_with_allocation
 from evaluate import load_model
@@ -87,10 +87,12 @@ def kbest_allocations(P: np.ndarray, max_k: int):
                     heapq.heappush(heap, (-state_logp(child), child))
 
 
-def generate_instance(grid_w, grid_h, num_agents, num_goals, obstacle_prob, seed):
+def generate_instance(grid_w, grid_h, num_agents, num_goals, obstacle_prob, seed,
+                      fixed_map=None):
     """One solvable instance, or None if rejected (unreachable goal / too full)."""
     try:
-        map_dims = generate_random_map(grid_w, grid_h, obstacle_prob, seed=seed)
+        map_dims = fixed_map if fixed_map is not None else generate_random_map(
+            grid_w, grid_h, obstacle_prob, seed=seed)
         agents, goals = sample_agents_goals(map_dims, num_agents, M=num_goals, seed=seed)
     except ValueError:
         return None
@@ -106,6 +108,9 @@ def generate_instance(grid_w, grid_h, num_agents, num_goals, obstacle_prob, seed
 def main():
     parser = argparse.ArgumentParser(description="Full MAPF execution-cost NN vs solver")
     parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--map_file", type=str, default=None,
+                        help="MovingAI .map file; when set, grid_w/h/obstacle_prob are ignored "
+                             "and every instance uses this fixed map")
     parser.add_argument("--grid_w", type=int, default=8)
     parser.add_argument("--grid_h", type=int, default=8)
     parser.add_argument("--num_agents", type=int, default=3)
@@ -137,6 +142,8 @@ def main():
 
     num_goals = args.num_goals if args.num_goals is not None else args.num_agents
 
+    fixed_map = load_map_file(args.map_file) if args.map_file is not None else None
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(args.checkpoint, device)
     ckpt_args = torch.load(args.checkpoint, map_location="cpu", weights_only=False)["args"]
@@ -157,7 +164,7 @@ def main():
     while True:
         w, h, p = draw_dims()
         warm = generate_instance(w, h, args.num_agents, num_goals, p,
-                                 int(rng.integers(0, 2**31)))
+                                 int(rng.integers(0, 2**31)), fixed_map=fixed_map)
         if warm is None:
             continue
         w_map, w_agents, w_goals, _, _ = warm
@@ -180,7 +187,8 @@ def main():
         inst_seed = int(rng.integers(0, 2**31))
         attempts += 1
         w, h, p = draw_dims()
-        inst = generate_instance(w, h, args.num_agents, num_goals, p, inst_seed)
+        inst = generate_instance(w, h, args.num_agents, num_goals, p, inst_seed,
+                                 fixed_map=fixed_map)
         if inst is None:
             continue
         map_dims, agents, goals, D_raw, G_raw = inst
@@ -263,8 +271,10 @@ def main():
     nn_total_ms = np.array(alloc_ms_list) + np.array(nn_plan_ms_list)
     solver_ms_arr = np.array(solver_ms_list)
 
+    grid_desc = (args.map_file if args.map_file is not None
+                 else f"{args.grid_w}x{args.grid_h}")
     print(f"\n--- Full MAPF execution cost: NN vs solver "
-          f"({args.grid_w}x{args.grid_h}, N={args.num_agents}, M={num_goals}, "
+          f"({grid_desc}, N={args.num_agents}, M={num_goals}, "
           f"{n_done} instances, {attempts} attempts) ---")
     print(f"  infeasible_rate       : {n_infeasible / n_done:.4f} "
           f"({n_infeasible} of {n_done}, after {args.max_fallbacks} candidates)")
