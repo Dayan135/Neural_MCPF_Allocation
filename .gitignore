@@ -11,3 +11,9 @@ checkpoints/
 logs/
 evaluation/figures/
 results/
+
+# Local CPU venv (eval only)
+.venv/
+
+# Superpowers working docs (plans/brainstorms — local only)
+docs/superpowers/
