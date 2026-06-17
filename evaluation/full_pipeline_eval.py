@@ -37,10 +37,51 @@ from solver_wrapper import run_basic_mapf, run_basic_mapf_with_allocation
 from evaluate import load_model
 
 
-def order_goals(agent_idx: int, goal_indices: list[int], D: np.ndarray, G: np.ndarray) -> list[int]:
-    """Visit order minimizing D[agent, first] + Σ G[g_k, g_k+1] (brute force, ≤6 goals)."""
+def _tour_cost(agent_idx: int, order: list[int], D: np.ndarray, G: np.ndarray) -> float:
+    cost = D[agent_idx, order[0]]
+    for k in range(1, len(order)):
+        cost += G[order[k - 1], order[k]]
+    return float(cost)
+
+
+def _nn_2opt_order(agent_idx: int, goal_indices: list[int],
+                   D: np.ndarray, G: np.ndarray) -> list[int]:
+    """Nearest-neighbor construction + 2-opt refinement — a near-optimal tour in
+    O(k^2) per pass, for agents carrying too many goals for exact enumeration."""
+    remaining = list(goal_indices)
+    first = min(remaining, key=lambda g: D[agent_idx, g])
+    order = [first]
+    remaining.remove(first)
+    while remaining:
+        last = order[-1]
+        nxt = min(remaining, key=lambda g: G[last, g])
+        order.append(nxt)
+        remaining.remove(nxt)
+
+    improved = True
+    while improved:
+        improved = False
+        base = _tour_cost(agent_idx, order, D, G)
+        for i in range(len(order) - 1):
+            for j in range(i + 1, len(order)):
+                cand = order[:i] + order[i:j + 1][::-1] + order[j + 1:]
+                c = _tour_cost(agent_idx, cand, D, G)
+                if c + 1e-9 < base:
+                    order, base, improved = cand, c, True
+    return order
+
+
+def order_goals(agent_idx: int, goal_indices: list[int], D: np.ndarray, G: np.ndarray,
+                exact_max: int = 8) -> list[int]:
+    """Visit order minimizing D[agent, first] + Σ G[g_k, g_k+1].
+
+    Exact brute force for ≤ exact_max goals (optimal, identical to the original);
+    nearest-neighbor + 2-opt beyond it — M≫N can pile >10 goals on one agent,
+    where k! enumeration is intractable (12! ≈ 5e8)."""
     if len(goal_indices) <= 1:
         return list(goal_indices)
+    if len(goal_indices) > exact_max:
+        return _nn_2opt_order(agent_idx, goal_indices, D, G)
     best_perm, best_cost = None, float("inf")
     for perm in itertools.permutations(goal_indices):
         cost = D[agent_idx, perm[0]]
@@ -144,6 +185,11 @@ def main():
                              "RobustMCPF dir — pass e.g. ${SLURM_ARRAY_JOB_ID}_"
                              "${SLURM_ARRAY_TASK_ID}. Defaults to the pid (only safe "
                              "for a single host).")
+    parser.add_argument("--max_seconds", type=float, default=0.0,
+                        help="soft wall budget for the instance loop (0 = unlimited). "
+                             "When exceeded, stop early and write the partial CSV — so a "
+                             "slow CBS-bound config still yields data instead of a Slurm "
+                             "TIMEOUT that loses everything. Set below the Slurm --time.")
     args = parser.parse_args()
 
     num_goals = args.num_goals if args.num_goals is not None else args.num_agents
@@ -193,8 +239,13 @@ def main():
     nn_conflicts_list, solver_conflicts_list = [], []
     csv_rows = []
     n_done, attempts, n_infeasible, n_solver_skip = 0, 0, 0, 0
+    loop_start = time.perf_counter()
 
     while n_done < args.n_instances:
+        if args.max_seconds and time.perf_counter() - loop_start > args.max_seconds:
+            print(f"\n[time budget] {args.max_seconds:.0f}s exceeded at {n_done} "
+                  f"instances — stopping early and writing partial results.", flush=True)
+            break
         inst_seed = int(rng.integers(0, 2**31))
         attempts += 1
         w, h, p = draw_dims()
@@ -275,6 +326,12 @@ def main():
         n_done += 1
         if n_done % 50 == 0:
             print(f"  {n_done}/{args.n_instances} instances done", flush=True)
+
+    if n_done == 0:
+        print(f"\n[no instances completed] {attempts} attempts, "
+              f"{n_solver_skip} solver-skipped, {n_infeasible} infeasible — "
+              f"nothing to write. Raise --max_seconds / --time or lower N,M.")
+        return
 
     cost_nn = np.array(cost_nn_list, dtype=float)
     cost_solver = np.array(cost_solver_list, dtype=float)
