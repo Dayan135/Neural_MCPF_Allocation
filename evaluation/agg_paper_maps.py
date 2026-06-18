@@ -55,7 +55,13 @@ def agg(o):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="results/fullpipe_paper")
+    ap.add_argument("--ns", default="5,10,15", help="comma-separated N values")
+    ap.add_argument("--ms", default="10,20,30", help="comma-separated M values")
     args = ap.parse_args()
+
+    global NS, MS
+    NS = [int(x) for x in args.ns.split(",")]
+    MS = [int(x) for x in args.ms.split(",")]
 
     cur = load_group(args.base, "current")
     lrg = load_group(args.base, "larger")

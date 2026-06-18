@@ -380,3 +380,108 @@ re-run. **On the cluster only** (`results/` is git-ignored — generated artifac
 
 Aggregate job logs: `logs/eval_large_18139134.out` (offline — per-config only, no per-instance CSV),
 `logs/fullpipe_large_18139135.out` (8×8), `logs/fp_large_div_18139275.out` (diverse).
+
+## Exp 12 — paper benchmark maps, scaled N/M, h128/L6 vs h256/L8 (paper_*_s0, 2026-06-18)
+
+**Motivation.** Move off procedural 8–12 grids onto the RobustMCPF paper's actual benchmark maps,
+with a moderate scale-up, and ask whether a *larger* model beats the current one here. Two universal
+models trained jointly on the **4 small 32×32 MovingAI maps** (empty, random-20, maze, room) ×
+**N∈{5,10,15} × M∈{10,20,30}** (36 configs, 20k/2k/2k each): the current **h128/L6** (1.19M params)
+and a larger **h256/L8** (6.33M). Same data; lr 5e-4 (h128) / 3e-4 (h256), grad_clip 1.0, 150 ep,
+mixed-size. Scripts: `gen_paper_maps_data.sh`, `exp_paper_{current,larger}.sh`.
+
+**Training.** Both wall-limited before 150 ep. Best per-goal val acc: h128/L6 **0.857** (ep ~58–64),
+h256/L8 0.851 (ep ~33–40). The larger model hit its val minimum early then overfit (train acc → 0.91,
+val loss rising) — extra capacity did not help in-distribution.
+
+### Full-pipeline execution cost — 200 instances/config, true CBS cost
+
+`eval_paper_maps_{current,larger}.sh` → `full_pipeline_eval.py --map_file` (NN argmax allocation →
+goal ordering → CBS, vs LKH+CBS solver; cost = `Solution[5]`). Mean over 36 configs:
+
+| Model | Cost ratio | Exact match | Diff mean | Diff max | Diff std | Speedup |
+|-------|-----------|-------------|-----------|----------|----------|---------|
+| **h128/L6 (current)** | **1.048** | **0.433** | **6.48** | 147 | **8.71** | **1.54×** |
+| h256/L8 (larger) | 1.052 | 0.402 | 7.09 | 153 | 9.12 | 1.24× |
+
+**h128/L6 wins in-distribution** on every aggregate metric — lower cost, higher exact-match, and
+~20% faster inference (2.5× the params buys nothing), consistent with the overfitting picture.
+It holds per cell too — current ≤ larger on cost ratio at all 4 maps and ~every (N,M):
+
+| (N,M) | ratio cur | ratio lrg | exact cur | exact lrg |
+|-------|-----------|-----------|-----------|-----------|
+| 5,10  | 1.040 | 1.038 | 0.608 | 0.585 |
+| 5,20  | 1.074 | 1.076 | 0.280 | 0.261 |
+| 5,30  | 1.102 | 1.113 | 0.111 | 0.091 |
+| 10,10 | 1.022 | 1.025 | 0.706 | 0.680 |
+| 10,20 | 1.041 | 1.043 | 0.410 | 0.394 |
+| 10,30 | 1.061 | 1.069 | 0.196 | 0.166 |
+| 15,10 | 1.015 | 1.017 | 0.801 | 0.771 |
+| 15,20 | 1.031 | 1.034 | 0.505 | 0.440 |
+| 15,30 | 1.046 | 1.055 | 0.278 | 0.231 |
+
+By map (cost ratio cur/lrg): empty 1.053/1.060, random 1.053/1.055, maze 1.029/1.035, room 1.057/1.059.
+
+**Difficulty axes.** M dominates: ratio climbs 1.02 → 1.10 and exact-match collapses 0.80 → 0.09 as
+M 10 → 30. More agents help (at M=30: N5 1.10, N10 1.06, N15 1.046 — extra agents spread the goals →
+shorter tours). maze is "easiest" by ratio (walls inflate the absolute optimum, shrinking the
+relative gap). Speedup is modest (1.2–1.5×) and <1× on several maze/room high-M cells: single-instance
+CBS dominates both pipelines, so only the LKH allocation call is saved (cf. Exp 9/10).
+
+## Exp 13 — zero-shot XL extrapolation to paper-scale N/M (paper_*_s0, 2026-06-18)
+
+**Setup.** Both models are size-agnostic, so evaluate them far beyond their N≤15/M≤30 training range:
+**N∈{20,35,50} × M∈{50,75,100}** on the same 4 maps (toward the paper's N≤50/M≤100), no retraining.
+`eval_paper_xl_{current,larger}.sh`, 100 instances/config, 12h wall + 11.5h soft budget
+(`--max_seconds`) with partial-CSV fallback. **34/36** configs each — `room N20M75` and `room N35M100`
+timed out (one pathological CBS solve outran the wall before the between-instance budget check could
+fire and write a partial).
+
+### The verdict flips: capacity wins out-of-distribution
+
+Mean over the 34 shared configs:
+
+| Model | Cost ratio | Diff mean | Diff max | Diff std | Speedup |
+|-------|-----------|-----------|----------|----------|---------|
+| h128/L6 (current) | 1.243 | 47.8 | 224 | 14.1 | **9.7×** |
+| **h256/L8 (larger)** | **1.206** | **41.3** | **124** | **11.8** | 6.0× |
+
+**Opposite of Exp 12.** Far OOD the larger model is better on cost across all 4 maps and nearly every
+(N,M) cell, widest at high N, and roughly *halves* the worst-case diff (224 → 124) — more robust, not
+just lower-mean. The smaller model's only edge is raw speed (fewer params → faster forward). The
+capacity that overfit in-range is the better *generalizer* at scale.
+
+| (N,M) | ratio cur | ratio lrg |
+|-------|-----------|-----------|
+| 20,50  | 1.204 | 1.211 |
+| 20,75  | 1.272 | 1.228 |
+| 20,100 | 1.248 | 1.246 |
+| 35,50  | 1.217 | 1.188 |
+| 35,75  | 1.288 | 1.211 |
+| 35,100 | 1.234 | 1.225 |
+| 50,50  | 1.221 | 1.159 |
+| 50,75  | 1.289 | 1.184 |
+| 50,100 | 1.216 | 1.211 |
+
+(At N=20 the two are close — current even edges M=50; the larger model's advantage opens up at N=35,50.)
+By map (cur/lrg): empty 1.279/1.241, random 1.265/1.227, maze 1.175/1.148, room 1.253/1.208.
+
+**Both degrade**, as expected this far OOD: ratio ~1.21–1.24 (vs ~1.05 in-range) and exact-match ≈ 0 —
+at M=50–100 the NN never exactly reproduces the solver's cost, but still lands ~20% above optimal.
+
+**Speedup explodes with scale.** Up to **47.8×** (room n50m100) and ~6–10× mean — at 75–100 goals
+LKH's mTSP allocation is expensive while the NN forward stays cheap. This is the practical case for
+the NN: paper-scale allocation at ~20% cost for an order-of-magnitude-plus speedup. maze stays
+"easiest" by ratio (~1.15).
+
+### Raw data (Exp 12 + 13)
+
+Per-instance CSVs, **cluster only** (`results/` git-ignored), same columns as Exp 11
+(`inst_seed, cost_nn, cost_solver, nn_k, solver_k, conflicts_nn, conflicts_solver, alloc_ms,
+nn_plan_ms, solver_ms`):
+
+- `results/fullpipe_paper/{current,larger}/<map>_n{N}m{M}.csv` — Exp 12, 36 files each (200 rows)
+- `results/fullpipe_paper_xl/{current,larger}/<map>_n{N}m{M}.csv` — Exp 13, 34 files each (≤100 rows)
+
+Aggregate with `evaluation/agg_paper_maps.py --base <dir> --ns <N,…> --ms <M,…>` (prints per-config,
+per-model, by-map, by-(N,M)). Jobs: 18227874/18227875 (Exp 12 eval), 18229490/18229491 (Exp 13 XL).
