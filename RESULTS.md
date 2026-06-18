@@ -380,3 +380,279 @@ re-run. **On the cluster only** (`results/` is git-ignored — generated artifac
 
 Aggregate job logs: `logs/eval_large_18139134.out` (offline — per-config only, no per-instance CSV),
 `logs/fullpipe_large_18139135.out` (8×8), `logs/fp_large_div_18139275.out` (diverse).
+
+## Exp 12 — paper benchmark maps, scaled N/M, h128/L6 vs h256/L8 (paper_*_s0, 2026-06-18)
+
+**Motivation.** Move off procedural 8–12 grids onto the RobustMCPF paper's actual benchmark maps,
+with a moderate scale-up, and ask whether a *larger* model beats the current one here. Two universal
+models trained jointly on the **4 small 32×32 MovingAI maps** (empty, random-20, maze, room) ×
+**N∈{5,10,15} × M∈{10,20,30}** (36 configs, 20k/2k/2k each): the current **h128/L6** (1.19M params)
+and a larger **h256/L8** (6.33M). Same data; lr 5e-4 (h128) / 3e-4 (h256), grad_clip 1.0, 150 ep,
+mixed-size. Scripts: `gen_paper_maps_data.sh`, `exp_paper_{current,larger}.sh`.
+
+**Training.** Both wall-limited before 150 ep. Best per-goal val acc: h128/L6 **0.857** (ep ~58–64),
+h256/L8 0.851 (ep ~33–40). The larger model hit its val minimum early then overfit (train acc → 0.91,
+val loss rising) — extra capacity did not help in-distribution.
+
+### Full-pipeline execution cost — 200 instances/config, true CBS cost
+
+`eval_paper_maps_{current,larger}.sh` → `full_pipeline_eval.py --map_file` (NN argmax allocation →
+goal ordering → CBS, vs LKH+CBS solver; cost = `Solution[5]`). Mean over 36 configs:
+
+| Model | Cost ratio | Exact match | Diff mean | Diff max | Diff std | Speedup |
+|-------|-----------|-------------|-----------|----------|----------|---------|
+| **h128/L6 (current)** | **1.048** | **0.433** | **6.48** | 147 | **8.71** | **1.54×** |
+| h256/L8 (larger) | 1.052 | 0.402 | 7.09 | 153 | 9.12 | 1.24× |
+
+**h128/L6 wins in-distribution** on every aggregate metric — lower cost, higher exact-match, and
+~20% faster inference (2.5× the params buys nothing), consistent with the overfitting picture.
+It holds per cell too — current ≤ larger on cost ratio at all 4 maps and ~every (N,M):
+
+| (N,M) | ratio cur | ratio lrg | exact cur | exact lrg |
+|-------|-----------|-----------|-----------|-----------|
+| 5,10  | 1.040 | 1.038 | 0.608 | 0.585 |
+| 5,20  | 1.074 | 1.076 | 0.280 | 0.261 |
+| 5,30  | 1.102 | 1.113 | 0.111 | 0.091 |
+| 10,10 | 1.022 | 1.025 | 0.706 | 0.680 |
+| 10,20 | 1.041 | 1.043 | 0.410 | 0.394 |
+| 10,30 | 1.061 | 1.069 | 0.196 | 0.166 |
+| 15,10 | 1.015 | 1.017 | 0.801 | 0.771 |
+| 15,20 | 1.031 | 1.034 | 0.505 | 0.440 |
+| 15,30 | 1.046 | 1.055 | 0.278 | 0.231 |
+
+By map (cost ratio cur/lrg): empty 1.053/1.060, random 1.053/1.055, maze 1.029/1.035, room 1.057/1.059.
+
+### Full per-config tables (200 instances each; n<200 = solver-budget skips)
+
+**h128/L6 (current) — per-config (36 configs):**
+
+| Config | n | Cost ratio | Exact | Diff mean | Diff max | Diff std | Speedup |
+|--------|---|-----------|-------|-----------|----------|----------|---------|
+| empty-32-32 n5m10 | 200 | 1.0524 | 0.510 | 3.84 | 36 | 6.74 | 1.27× |
+| empty-32-32 n5m20 | 200 | 1.0773 | 0.220 | 8.62 | 61 | 10.10 | 1.61× |
+| empty-32-32 n5m30 | 200 | 1.1069 | 0.060 | 15.62 | 65 | 13.18 | 1.85× |
+| empty-32-32 n10m10 | 200 | 1.0250 | 0.705 | 1.42 | 24 | 3.57 | 1.49× |
+| empty-32-32 n10m20 | 200 | 1.0502 | 0.360 | 4.86 | 38 | 7.31 | 1.71× |
+| empty-32-32 n10m30 | 200 | 1.0685 | 0.120 | 8.88 | 52 | 8.67 | 1.86× |
+| empty-32-32 n15m10 | 200 | 1.0137 | 0.840 | 0.71 | 13 | 2.08 | 1.74× |
+| empty-32-32 n15m20 | 200 | 1.0322 | 0.490 | 2.83 | 24 | 4.59 | 1.99× |
+| empty-32-32 n15m30 | 200 | 1.0470 | 0.230 | 5.45 | 37 | 6.30 | 2.24× |
+| random-32-32-20 n5m10 | 200 | 1.0448 | 0.545 | 3.45 | 37 | 6.81 | 1.16× |
+| random-32-32-20 n5m20 | 200 | 1.0842 | 0.195 | 10.74 | 50 | 12.00 | 1.11× |
+| random-32-32-20 n5m30 | 200 | 1.1067 | 0.045 | 17.20 | 66 | 13.19 | 1.34× |
+| random-32-32-20 n10m10 | 200 | 1.0247 | 0.660 | 1.59 | 28 | 3.52 | 1.63× |
+| random-32-32-20 n10m20 | 200 | 1.0470 | 0.290 | 5.01 | 26 | 6.53 | 1.75× |
+| random-32-32-20 n10m30 | 200 | 1.0614 | 0.125 | 8.72 | 48 | 8.45 | 1.99× |
+| random-32-32-20 n15m10 | 200 | 1.0195 | 0.705 | 1.09 | 18 | 2.69 | 2.00× |
+| random-32-32-20 n15m20 | 200 | 1.0327 | 0.430 | 3.08 | 37 | 5.05 | 0.72× |
+| random-32-32-20 n15m30 | 200 | 1.0542 | 0.190 | 7.04 | 44 | 8.39 | 2.48× |
+| maze-32-32-2 n5m10 | 200 | 1.0103 | 0.860 | 1.49 | 48 | 6.00 | 1.30× |
+| maze-32-32-2 n5m20 | 200 | 1.0462 | 0.565 | 9.90 | 119 | 20.33 | 0.24× |
+| maze-32-32-2 n5m30 | 200 | 1.0748 | 0.295 | 19.09 | 147 | 25.85 | 0.31× |
+| maze-32-32-2 n10m10 | 200 | 1.0136 | 0.860 | 1.43 | 66 | 6.50 | 1.84× |
+| maze-32-32-2 n10m20 | 200 | 1.0218 | 0.640 | 3.58 | 67 | 8.80 | 2.01× |
+| maze-32-32-2 n10m30 | 200 | 1.0348 | 0.460 | 7.04 | 86 | 13.54 | 0.58× |
+| maze-32-32-2 n15m10 | 200 | 1.0070 | 0.890 | 0.64 | 31 | 3.00 | 2.34× |
+| maze-32-32-2 n15m20 | 200 | 1.0182 | 0.680 | 2.56 | 52 | 7.32 | 0.66× |
+| maze-32-32-2 n15m30 | 199 | 1.0338 | 0.513 | 5.76 | 112 | 12.63 | 0.42× |
+| room-32-32-4 n5m10 | 200 | 1.0515 | 0.515 | 4.63 | 40 | 7.65 | 3.84× |
+| room-32-32-4 n5m20 | 199 | 1.0868 | 0.141 | 12.59 | 117 | 14.15 | 3.85× |
+| room-32-32-4 n5m30 | 198 | 1.1186 | 0.045 | 21.64 | 114 | 16.04 | 1.61× |
+| room-32-32-4 n10m10 | 200 | 1.0244 | 0.600 | 1.84 | 22 | 3.57 | 1.56× |
+| room-32-32-4 n10m20 | 198 | 1.0465 | 0.348 | 5.77 | 50 | 8.76 | 0.25× |
+| room-32-32-4 n10m30 | 199 | 1.0790 | 0.080 | 12.58 | 56 | 11.63 | 0.40× |
+| room-32-32-4 n15m10 | 200 | 1.0208 | 0.770 | 1.41 | 35 | 4.04 | 2.33× |
+| room-32-32-4 n15m20 | 200 | 1.0393 | 0.420 | 4.21 | 32 | 6.20 | 0.54× |
+| room-32-32-4 n15m30 | 200 | 1.0485 | 0.180 | 6.95 | 39 | 8.29 | 1.37× |
+
+**h256/L8 (larger) — per-config (36 configs):**
+
+| Config | n | Cost ratio | Exact | Diff mean | Diff max | Diff std | Speedup |
+|--------|---|-----------|-------|-----------|----------|----------|---------|
+| empty-32-32 n5m10 | 200 | 1.0518 | 0.495 | 3.88 | 37 | 6.75 | 1.09× |
+| empty-32-32 n5m20 | 200 | 1.0818 | 0.215 | 9.21 | 51 | 10.53 | 0.96× |
+| empty-32-32 n5m30 | 200 | 1.1336 | 0.025 | 19.34 | 71 | 15.74 | 1.07× |
+| empty-32-32 n10m10 | 200 | 1.0250 | 0.695 | 1.45 | 22 | 3.40 | 1.14× |
+| empty-32-32 n10m20 | 200 | 1.0503 | 0.320 | 4.82 | 48 | 7.00 | 1.27× |
+| empty-32-32 n10m30 | 200 | 1.0784 | 0.120 | 10.10 | 53 | 9.28 | 1.38× |
+| empty-32-32 n15m10 | 200 | 1.0172 | 0.790 | 0.88 | 24 | 2.57 | 1.36× |
+| empty-32-32 n15m20 | 200 | 1.0424 | 0.375 | 3.73 | 44 | 5.95 | 1.42× |
+| empty-32-32 n15m30 | 200 | 1.0592 | 0.155 | 6.85 | 29 | 6.72 | 1.51× |
+| random-32-32-20 n5m10 | 200 | 1.0440 | 0.520 | 3.58 | 47 | 7.27 | 1.11× |
+| random-32-32-20 n5m20 | 200 | 1.0806 | 0.145 | 10.11 | 80 | 10.66 | 1.33× |
+| random-32-32-20 n5m30 | 200 | 1.1091 | 0.040 | 17.51 | 68 | 12.92 | 1.58× |
+| random-32-32-20 n10m10 | 200 | 1.0309 | 0.605 | 1.97 | 28 | 4.04 | 0.67× |
+| random-32-32-20 n10m20 | 200 | 1.0485 | 0.305 | 5.15 | 42 | 6.71 | 1.61× |
+| random-32-32-20 n10m30 | 200 | 1.0676 | 0.090 | 9.66 | 46 | 8.89 | 1.87× |
+| random-32-32-20 n15m10 | 200 | 1.0181 | 0.715 | 1.00 | 16 | 2.62 | 1.89× |
+| random-32-32-20 n15m20 | 200 | 1.0375 | 0.415 | 3.48 | 34 | 5.63 | 2.00× |
+| random-32-32-20 n15m30 | 200 | 1.0575 | 0.145 | 7.40 | 40 | 7.36 | 2.37× |
+| maze-32-32-2 n5m10 | 200 | 1.0109 | 0.840 | 1.55 | 102 | 8.10 | 1.16× |
+| maze-32-32-2 n5m20 | 200 | 1.0538 | 0.520 | 11.37 | 153 | 20.58 | 1.50× |
+| maze-32-32-2 n5m30 | 200 | 1.0864 | 0.275 | 22.11 | 143 | 31.48 | 0.13× |
+| maze-32-32-2 n10m10 | 200 | 1.0153 | 0.840 | 1.65 | 104 | 8.68 | 0.38× |
+| maze-32-32-2 n10m20 | 200 | 1.0215 | 0.665 | 3.53 | 89 | 9.58 | 2.26× |
+| maze-32-32-2 n10m30 | 198 | 1.0513 | 0.399 | 10.42 | 112 | 16.29 | 0.38× |
+| maze-32-32-2 n15m10 | 200 | 1.0105 | 0.835 | 0.87 | 27 | 3.05 | 2.07× |
+| maze-32-32-2 n15m20 | 200 | 1.0224 | 0.620 | 3.01 | 42 | 6.98 | 0.78× |
+| maze-32-32-2 n15m30 | 197 | 1.0422 | 0.497 | 7.14 | 106 | 14.16 | 2.33× |
+| room-32-32-4 n5m10 | 200 | 1.0456 | 0.485 | 4.21 | 29 | 6.83 | 1.26× |
+| room-32-32-4 n5m20 | 200 | 1.0858 | 0.165 | 12.38 | 61 | 12.33 | 0.26× |
+| room-32-32-4 n5m30 | 200 | 1.1220 | 0.025 | 22.31 | 95 | 15.72 | 0.13× |
+| room-32-32-4 n10m10 | 200 | 1.0303 | 0.580 | 2.23 | 30 | 4.63 | 1.87× |
+| room-32-32-4 n10m20 | 200 | 1.0522 | 0.285 | 6.31 | 35 | 7.69 | 1.20× |
+| room-32-32-4 n10m30 | 197 | 1.0780 | 0.056 | 12.38 | 59 | 11.63 | 0.47× |
+| room-32-32-4 n15m10 | 200 | 1.0206 | 0.745 | 1.30 | 19 | 3.24 | 0.96× |
+| room-32-32-4 n15m20 | 200 | 1.0316 | 0.350 | 3.43 | 30 | 5.11 | 0.55× |
+| room-32-32-4 n15m30 | 199 | 1.0620 | 0.126 | 8.91 | 38 | 8.35 | 1.30× |
+
+**Difficulty axes.** M dominates: ratio climbs 1.02 → 1.10 and exact-match collapses 0.80 → 0.09 as
+M 10 → 30. More agents help (at M=30: N5 1.10, N10 1.06, N15 1.046 — extra agents spread the goals →
+shorter tours). maze is "easiest" by ratio (walls inflate the absolute optimum, shrinking the
+relative gap). Speedup is modest (1.2–1.5×) and <1× on several maze/room high-M cells: single-instance
+CBS dominates both pipelines, so only the LKH allocation call is saved (cf. Exp 9/10).
+
+## Exp 13 — zero-shot XL extrapolation to paper-scale N/M (paper_*_s0, 2026-06-18)
+
+**Setup.** Both models are size-agnostic, so evaluate them far beyond their N≤15/M≤30 training range:
+**N∈{20,35,50} × M∈{50,75,100}** on the same 4 maps (toward the paper's N≤50/M≤100), no retraining.
+`eval_paper_xl_{current,larger}.sh`, 100 instances/config, 12h wall + 11.5h soft budget
+(`--max_seconds`) with partial-CSV fallback. **36/36** configs each. Two room cells
+(`N20M75`, `N35M100`) first timed out — a single pathological CBS solve outran the wall before the
+between-instance budget check could fire — then were recovered (`eval_paper_xl_recover.sh`) with a
+hard per-instance `--instance_timeout 600`, which skipped the 1–2 offending solves per config and let
+the rest finish in ≤42 min.
+
+### The verdict flips: capacity wins out-of-distribution
+
+Mean over all 36 configs:
+
+| Model | Cost ratio | Diff mean | Diff max | Diff std | Speedup |
+|-------|-----------|-----------|----------|----------|---------|
+| h128/L6 (current) | 1.244 | 48.8 | 224 | 14.2 | **9.4×** |
+| **h256/L8 (larger)** | **1.208** | **42.1** | **124** | **11.9** | 5.9× |
+
+**Opposite of Exp 12.** Far OOD the larger model is better on cost across all 4 maps and nearly every
+(N,M) cell, widest at high N, and roughly *halves* the worst-case diff (224 → 124) — more robust, not
+just lower-mean. The smaller model's only edge is raw speed (fewer params → faster forward). The
+capacity that overfit in-range is the better *generalizer* at scale.
+
+| (N,M) | ratio cur | ratio lrg |
+|-------|-----------|-----------|
+| 20,50  | 1.204 | 1.211 |
+| 20,75  | 1.283 | 1.231 |
+| 20,100 | 1.248 | 1.246 |
+| 35,50  | 1.217 | 1.188 |
+| 35,75  | 1.288 | 1.211 |
+| 35,100 | 1.233 | 1.227 |
+| 50,50  | 1.221 | 1.159 |
+| 50,75  | 1.289 | 1.184 |
+| 50,100 | 1.216 | 1.211 |
+
+(At N=20 the two are close — current even edges M=50; the larger model's advantage opens up at N=35,50.)
+By map (cur/lrg): empty 1.279/1.241, random 1.265/1.227, maze 1.175/1.148, room 1.258/1.214.
+
+### Full per-config tables (100 instances each; n<100 = solver-budget skips or instance-timeout)
+
+**h128/L6 (current) — per-config (36 configs):**
+
+| Config | n | Cost ratio | Exact | Diff mean | Diff max | Diff std | Speedup |
+|--------|---|-----------|-------|-----------|----------|----------|---------|
+| empty-32-32 n20m50 | 100 | 1.2587 | 0.000 | 39.83 | 89 | 13.32 | 2.87× |
+| empty-32-32 n20m75 | 100 | 1.2930 | 0.000 | 59.85 | 112 | 14.23 | 5.32× |
+| empty-32-32 n20m100 | 100 | 1.2724 | 0.000 | 67.65 | 102 | 12.89 | 3.44× |
+| empty-32-32 n35m50 | 100 | 1.2970 | 0.000 | 40.64 | 87 | 14.17 | 3.03× |
+| empty-32-32 n35m75 | 100 | 1.2806 | 0.000 | 51.33 | 86 | 12.71 | 4.56× |
+| empty-32-32 n35m100 | 100 | 1.2653 | 0.000 | 59.17 | 85 | 10.69 | 8.43× |
+| empty-32-32 n50m50 | 100 | 1.3037 | 0.000 | 36.51 | 66 | 10.96 | 7.19× |
+| empty-32-32 n50m75 | 100 | 1.2971 | 0.000 | 49.58 | 112 | 13.32 | 8.45× |
+| empty-32-32 n50m100 | 100 | 1.2449 | 0.000 | 50.73 | 78 | 11.00 | 18.56× |
+| random-32-32-20 n20m50 | 100 | 1.2371 | 0.000 | 40.12 | 89 | 16.13 | 5.30× |
+| random-32-32-20 n20m75 | 100 | 1.2800 | 0.000 | 62.58 | 111 | 15.01 | 5.92× |
+| random-32-32-20 n20m100 | 99 | 1.2537 | 0.000 | 67.86 | 100 | 14.62 | 15.05× |
+| random-32-32-20 n35m50 | 100 | 1.2567 | 0.000 | 36.99 | 69 | 12.60 | 5.18× |
+| random-32-32-20 n35m75 | 99 | 1.2977 | 0.000 | 58.11 | 93 | 14.40 | 1.03× |
+| random-32-32-20 n35m100 | 100 | 1.2519 | 0.000 | 59.83 | 92 | 11.95 | 18.75× |
+| random-32-32-20 n50m50 | 100 | 1.2687 | 0.000 | 34.71 | 88 | 11.09 | 1.14× |
+| random-32-32-20 n50m75 | 100 | 1.3102 | 0.000 | 54.86 | 99 | 14.12 | 8.59× |
+| random-32-32-20 n50m100 | 100 | 1.2314 | 0.000 | 50.88 | 84 | 10.95 | 10.42× |
+| maze-32-32-2 n20m50 | 99 | 1.1152 | 0.000 | 23.62 | 78 | 15.49 | 0.76× |
+| maze-32-32-2 n20m75 | 100 | 1.2431 | 0.000 | 62.89 | 224 | 26.02 | 1.97× |
+| maze-32-32-2 n20m100 | 99 | 1.1987 | 0.000 | 59.61 | 117 | 20.29 | 17.35× |
+| maze-32-32-2 n35m50 | 100 | 1.1108 | 0.000 | 18.11 | 59 | 9.98 | 2.39× |
+| maze-32-32-2 n35m75 | 100 | 1.2348 | 0.000 | 49.84 | 145 | 20.51 | 6.74× |
+| maze-32-32-2 n35m100 | 98 | 1.1835 | 0.000 | 46.61 | 99 | 14.77 | 7.62× |
+| maze-32-32-2 n50m50 | 100 | 1.1005 | 0.010 | 14.11 | 37 | 7.49 | 16.21× |
+| maze-32-32-2 n50m75 | 99 | 1.2176 | 0.000 | 40.67 | 94 | 14.00 | 14.86× |
+| maze-32-32-2 n50m100 | 99 | 1.1722 | 0.000 | 39.14 | 69 | 12.26 | 7.95× |
+| room-32-32-4 n20m50 | 100 | 1.2040 | 0.000 | 37.40 | 85 | 14.86 | 4.96× |
+| room-32-32-4 n20m75 | 99 | 1.3165 | 0.000 | 74.27 | 125 | 17.86 | 1.79× |
+| room-32-32-4 n20m100 | 99 | 1.2663 | 0.000 | 75.17 | 132 | 17.56 | 2.71× |
+| room-32-32-4 n35m50 | 99 | 1.2019 | 0.000 | 31.03 | 79 | 12.37 | 0.66× |
+| room-32-32-4 n35m75 | 99 | 1.3396 | 0.000 | 69.42 | 118 | 19.39 | 21.93× |
+| room-32-32-4 n35m100 | 98 | 1.2309 | 0.000 | 56.17 | 88 | 12.41 | 7.61× |
+| room-32-32-4 n50m50 | 100 | 1.2096 | 0.000 | 28.23 | 63 | 11.00 | 12.99× |
+| room-32-32-4 n50m75 | 99 | 1.3322 | 0.000 | 59.85 | 117 | 18.47 | 29.45× |
+| room-32-32-4 n50m100 | 99 | 1.2168 | 0.000 | 47.94 | 74 | 11.80 | 47.83× |
+
+**h256/L8 (larger) — per-config (36 configs):**
+
+| Config | n | Cost ratio | Exact | Diff mean | Diff max | Diff std | Speedup |
+|--------|---|-----------|-------|-----------|----------|----------|---------|
+| empty-32-32 n20m50 | 100 | 1.2394 | 0.000 | 36.79 | 70 | 10.43 | 3.74× |
+| empty-32-32 n20m75 | 100 | 1.2641 | 0.000 | 54.04 | 91 | 13.74 | 5.35× |
+| empty-32-32 n20m100 | 100 | 1.2864 | 0.000 | 71.17 | 122 | 14.73 | 4.33× |
+| empty-32-32 n35m50 | 100 | 1.2225 | 0.000 | 30.45 | 55 | 9.14 | 3.31× |
+| empty-32-32 n35m75 | 100 | 1.2448 | 0.000 | 44.86 | 80 | 11.62 | 3.33× |
+| empty-32-32 n35m100 | 100 | 1.2638 | 0.000 | 58.88 | 86 | 10.49 | 5.74× |
+| empty-32-32 n50m50 | 100 | 1.1784 | 0.000 | 21.47 | 48 | 8.16 | 6.00× |
+| empty-32-32 n50m75 | 100 | 1.2307 | 0.000 | 38.60 | 68 | 9.89 | 5.36× |
+| empty-32-32 n50m100 | 100 | 1.2417 | 0.000 | 50.09 | 77 | 9.60 | 10.74× |
+| random-32-32-20 n20m50 | 100 | 1.2182 | 0.000 | 36.84 | 69 | 10.98 | 5.61× |
+| random-32-32-20 n20m75 | 100 | 1.2463 | 0.000 | 55.20 | 92 | 14.20 | 5.96× |
+| random-32-32-20 n20m100 | 99 | 1.2561 | 0.000 | 68.57 | 104 | 14.66 | 9.79× |
+| random-32-32-20 n35m50 | 100 | 1.2173 | 0.000 | 31.53 | 59 | 9.48 | 3.08× |
+| random-32-32-20 n35m75 | 100 | 1.2397 | 0.000 | 46.84 | 75 | 11.65 | 5.73× |
+| random-32-32-20 n35m100 | 100 | 1.2523 | 0.000 | 59.94 | 87 | 10.95 | 8.96× |
+| random-32-32-20 n50m50 | 100 | 1.1763 | 0.000 | 22.88 | 47 | 8.10 | 1.82× |
+| random-32-32-20 n50m75 | 99 | 1.1961 | 0.000 | 34.74 | 67 | 9.52 | 8.71× |
+| random-32-32-20 n50m100 | 100 | 1.2378 | 0.000 | 52.33 | 79 | 10.58 | 5.63× |
+| maze-32-32-2 n20m50 | 100 | 1.1522 | 0.000 | 31.66 | 124 | 20.65 | 2.95× |
+| maze-32-32-2 n20m75 | 100 | 1.1722 | 0.000 | 44.53 | 95 | 14.24 | 5.87× |
+| maze-32-32-2 n20m100 | 100 | 1.1788 | 0.000 | 53.61 | 95 | 16.30 | 11.45× |
+| maze-32-32-2 n35m50 | 100 | 1.1269 | 0.000 | 20.66 | 51 | 10.06 | 3.45× |
+| maze-32-32-2 n35m75 | 100 | 1.1440 | 0.000 | 30.62 | 67 | 11.52 | 3.97× |
+| maze-32-32-2 n35m100 | 100 | 1.1586 | 0.000 | 40.30 | 77 | 12.24 | 4.22× |
+| maze-32-32-2 n50m50 | 100 | 1.1042 | 0.020 | 14.64 | 33 | 7.61 | 8.76× |
+| maze-32-32-2 n50m75 | 100 | 1.1393 | 0.000 | 25.97 | 69 | 10.38 | 7.76× |
+| maze-32-32-2 n50m100 | 100 | 1.1551 | 0.000 | 35.30 | 69 | 11.31 | 1.21× |
+| room-32-32-4 n20m50 | 99 | 1.2345 | 0.000 | 42.91 | 75 | 14.76 | 1.18× |
+| room-32-32-4 n20m75 | 99 | 1.2427 | 0.000 | 57.08 | 95 | 14.24 | 3.55× |
+| room-32-32-4 n20m100 | 99 | 1.2610 | 0.000 | 73.68 | 119 | 17.52 | 1.51× |
+| room-32-32-4 n35m50 | 99 | 1.1853 | 0.000 | 28.69 | 55 | 10.63 | 0.61× |
+| room-32-32-4 n35m75 | 98 | 1.2171 | 0.000 | 44.51 | 90 | 14.03 | 13.10× |
+| room-32-32-4 n35m100 | 100 | 1.2316 | 0.000 | 56.26 | 92 | 12.81 | 4.27× |
+| room-32-32-4 n50m50 | 100 | 1.1761 | 0.000 | 23.79 | 51 | 9.28 | 6.40× |
+| room-32-32-4 n50m75 | 100 | 1.1711 | 0.000 | 31.01 | 64 | 10.56 | 3.12× |
+| room-32-32-4 n50m100 | 99 | 1.2091 | 0.000 | 46.28 | 72 | 11.05 | 26.17× |
+
+**Both degrade**, as expected this far OOD: ratio ~1.21–1.24 (vs ~1.05 in-range) and exact-match ≈ 0 —
+at M=50–100 the NN never exactly reproduces the solver's cost, but still lands ~20% above optimal.
+
+**Speedup explodes with scale.** Up to **47.8×** (room n50m100) and ~6–10× mean — at 75–100 goals
+LKH's mTSP allocation is expensive while the NN forward stays cheap. This is the practical case for
+the NN: paper-scale allocation at ~20% cost for an order-of-magnitude-plus speedup. maze stays
+"easiest" by ratio (~1.15).
+
+### Raw data (Exp 12 + 13)
+
+Per-instance CSVs, **cluster only** (`results/` git-ignored), same columns as Exp 11
+(`inst_seed, cost_nn, cost_solver, nn_k, solver_k, conflicts_nn, conflicts_solver, alloc_ms,
+nn_plan_ms, solver_ms`):
+
+- `results/fullpipe_paper/{current,larger}/<map>_n{N}m{M}.csv` — Exp 12, 36 files each (200 rows)
+- `results/fullpipe_paper_xl/{current,larger}/<map>_n{N}m{M}.csv` — Exp 13, 36 files each (≤100 rows)
+
+Aggregate with `evaluation/agg_paper_maps.py --base <dir> --ns <N,…> --ms <M,…>` (prints per-config,
+per-model, by-map, by-(N,M)). Jobs: 18227874/18227875 (Exp 12 eval), 18229490/18229491 (Exp 13 XL),
+18236650 (Exp 13 room-cell recovery).
