@@ -48,6 +48,7 @@ python evaluation/full_pipeline_eval.py \
     --n_instances 200 --seed 987654321 \
     --tag "${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}" \
     --max_seconds 27000 \
+    --instance_timeout 600 \
     --csv "$PROJECT/results/fullpipe_random/larger/${MAP}_n${N}m${M}.csv"
 
 echo "Done: map=$MAP N=$N M=$M"

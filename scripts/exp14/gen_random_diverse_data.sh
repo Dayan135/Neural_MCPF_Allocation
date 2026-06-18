@@ -13,7 +13,10 @@
 #SBATCH --qos=normal
 #SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=16G
+# 32G (not 16G): 16 parallel CBS workers on walls-to-0.5 grids OOM'd 16G during the
+# paper-maps gen (maze N15M30); here it's worse — 80k samples and ~half the instances
+# are dense maze-like grids. See RESULTS Exp 12 gen note.
+#SBATCH --mem=32G
 #SBATCH --output=/home/dayanb/course_multiagent/Neural_MCPF_Allocation/logs/gen_randdiv_%A_%a.out
 #SBATCH --error=/home/dayanb/course_multiagent/Neural_MCPF_Allocation/logs/gen_randdiv_%A_%a.err
 
