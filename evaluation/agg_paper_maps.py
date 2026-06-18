@@ -57,6 +57,9 @@ def main():
     ap.add_argument("--base", default="results/fullpipe_paper")
     ap.add_argument("--ns", default="5,10,15", help="comma-separated N values")
     ap.add_argument("--ms", default="10,20,30", help="comma-separated M values")
+    ap.add_argument("--markdown", action="store_true",
+                    help="emit per-config tables as GitHub-flavored markdown "
+                         "(for pasting into RESULTS.md)")
     args = ap.parse_args()
 
     global NS, MS
@@ -65,6 +68,24 @@ def main():
 
     cur = load_group(args.base, "current")
     lrg = load_group(args.base, "larger")
+
+    if args.markdown:
+        for label, o in [("h128/L6 (current)", cur), ("h256/L8 (larger)", lrg)]:
+            print(f"\n**{label} — per-config ({len(o)} configs):**\n")
+            print("| Config | n | Cost ratio | Exact | Diff mean | Diff max | Diff std | Speedup |")
+            print("|--------|---|-----------|-------|-----------|----------|----------|---------|")
+            for mp in MAPS:
+                for N in NS:
+                    for M in MS:
+                        k = f"{mp}_n{N}m{M}"
+                        if k not in o:
+                            continue
+                        v = o[k]
+                        cfg = f"{mp} n{N}m{M}"
+                        print(f"| {cfg} | {v['n']} | {v['ratio']:.4f} | {v['exact']:.3f} "
+                              f"| {v['dmean']:.2f} | {v['dmax']:.0f} | {v['dstd']:.2f} "
+                              f"| {v['speedup']:.2f}× |")
+        return
 
     for label, o in [("h128/L6 (current)", cur), ("h256/L8 (larger)", lrg)]:
         print(f"\n=== {label}: per-config ===")
