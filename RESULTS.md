@@ -517,18 +517,20 @@ CBS dominates both pipelines, so only the LKH allocation call is saved (cf. Exp 
 **Setup.** Both models are size-agnostic, so evaluate them far beyond their N≤15/M≤30 training range:
 **N∈{20,35,50} × M∈{50,75,100}** on the same 4 maps (toward the paper's N≤50/M≤100), no retraining.
 `eval_paper_xl_{current,larger}.sh`, 100 instances/config, 12h wall + 11.5h soft budget
-(`--max_seconds`) with partial-CSV fallback. **34/36** configs each — `room N20M75` and `room N35M100`
-timed out (one pathological CBS solve outran the wall before the between-instance budget check could
-fire and write a partial).
+(`--max_seconds`) with partial-CSV fallback. **36/36** configs each. Two room cells
+(`N20M75`, `N35M100`) first timed out — a single pathological CBS solve outran the wall before the
+between-instance budget check could fire — then were recovered (`eval_paper_xl_recover.sh`) with a
+hard per-instance `--instance_timeout 600`, which skipped the 1–2 offending solves per config and let
+the rest finish in ≤42 min.
 
 ### The verdict flips: capacity wins out-of-distribution
 
-Mean over the 34 shared configs:
+Mean over all 36 configs:
 
 | Model | Cost ratio | Diff mean | Diff max | Diff std | Speedup |
 |-------|-----------|-----------|----------|----------|---------|
-| h128/L6 (current) | 1.243 | 47.8 | 224 | 14.1 | **9.7×** |
-| **h256/L8 (larger)** | **1.206** | **41.3** | **124** | **11.8** | 6.0× |
+| h128/L6 (current) | 1.244 | 48.8 | 224 | 14.2 | **9.4×** |
+| **h256/L8 (larger)** | **1.208** | **42.1** | **124** | **11.9** | 5.9× |
 
 **Opposite of Exp 12.** Far OOD the larger model is better on cost across all 4 maps and nearly every
 (N,M) cell, widest at high N, and roughly *halves* the worst-case diff (224 → 124) — more robust, not
@@ -538,21 +540,21 @@ capacity that overfit in-range is the better *generalizer* at scale.
 | (N,M) | ratio cur | ratio lrg |
 |-------|-----------|-----------|
 | 20,50  | 1.204 | 1.211 |
-| 20,75  | 1.272 | 1.228 |
+| 20,75  | 1.283 | 1.231 |
 | 20,100 | 1.248 | 1.246 |
 | 35,50  | 1.217 | 1.188 |
 | 35,75  | 1.288 | 1.211 |
-| 35,100 | 1.234 | 1.225 |
+| 35,100 | 1.233 | 1.227 |
 | 50,50  | 1.221 | 1.159 |
 | 50,75  | 1.289 | 1.184 |
 | 50,100 | 1.216 | 1.211 |
 
 (At N=20 the two are close — current even edges M=50; the larger model's advantage opens up at N=35,50.)
-By map (cur/lrg): empty 1.279/1.241, random 1.265/1.227, maze 1.175/1.148, room 1.253/1.208.
+By map (cur/lrg): empty 1.279/1.241, random 1.265/1.227, maze 1.175/1.148, room 1.258/1.214.
 
-### Full per-config tables (100 instances each; n<100 = solver-budget skips; 2 room cells pending recovery)
+### Full per-config tables (100 instances each; n<100 = solver-budget skips or instance-timeout)
 
-**h128/L6 (current) — per-config (34 configs):**
+**h128/L6 (current) — per-config (36 configs):**
 
 | Config | n | Cost ratio | Exact | Diff mean | Diff max | Diff std | Speedup |
 |--------|---|-----------|-------|-----------|----------|----------|---------|
@@ -584,16 +586,16 @@ By map (cur/lrg): empty 1.279/1.241, random 1.265/1.227, maze 1.175/1.148, room 
 | maze-32-32-2 n50m75 | 99 | 1.2176 | 0.000 | 40.67 | 94 | 14.00 | 14.86× |
 | maze-32-32-2 n50m100 | 99 | 1.1722 | 0.000 | 39.14 | 69 | 12.26 | 7.95× |
 | room-32-32-4 n20m50 | 100 | 1.2040 | 0.000 | 37.40 | 85 | 14.86 | 4.96× |
+| room-32-32-4 n20m75 | 99 | 1.3165 | 0.000 | 74.27 | 125 | 17.86 | 1.79× |
 | room-32-32-4 n20m100 | 99 | 1.2663 | 0.000 | 75.17 | 132 | 17.56 | 2.71× |
 | room-32-32-4 n35m50 | 99 | 1.2019 | 0.000 | 31.03 | 79 | 12.37 | 0.66× |
 | room-32-32-4 n35m75 | 99 | 1.3396 | 0.000 | 69.42 | 118 | 19.39 | 21.93× |
+| room-32-32-4 n35m100 | 98 | 1.2309 | 0.000 | 56.17 | 88 | 12.41 | 7.61× |
 | room-32-32-4 n50m50 | 100 | 1.2096 | 0.000 | 28.23 | 63 | 11.00 | 12.99× |
 | room-32-32-4 n50m75 | 99 | 1.3322 | 0.000 | 59.85 | 117 | 18.47 | 29.45× |
 | room-32-32-4 n50m100 | 99 | 1.2168 | 0.000 | 47.94 | 74 | 11.80 | 47.83× |
 
-(Missing: room n20m75, room n35m100 — timed out, recovery job `18236650` pending.)
-
-**h256/L8 (larger) — per-config (34 configs):**
+**h256/L8 (larger) — per-config (36 configs):**
 
 | Config | n | Cost ratio | Exact | Diff mean | Diff max | Diff std | Speedup |
 |--------|---|-----------|-------|-----------|----------|----------|---------|
@@ -625,14 +627,14 @@ By map (cur/lrg): empty 1.279/1.241, random 1.265/1.227, maze 1.175/1.148, room 
 | maze-32-32-2 n50m75 | 100 | 1.1393 | 0.000 | 25.97 | 69 | 10.38 | 7.76× |
 | maze-32-32-2 n50m100 | 100 | 1.1551 | 0.000 | 35.30 | 69 | 11.31 | 1.21× |
 | room-32-32-4 n20m50 | 99 | 1.2345 | 0.000 | 42.91 | 75 | 14.76 | 1.18× |
+| room-32-32-4 n20m75 | 99 | 1.2427 | 0.000 | 57.08 | 95 | 14.24 | 3.55× |
 | room-32-32-4 n20m100 | 99 | 1.2610 | 0.000 | 73.68 | 119 | 17.52 | 1.51× |
 | room-32-32-4 n35m50 | 99 | 1.1853 | 0.000 | 28.69 | 55 | 10.63 | 0.61× |
 | room-32-32-4 n35m75 | 98 | 1.2171 | 0.000 | 44.51 | 90 | 14.03 | 13.10× |
+| room-32-32-4 n35m100 | 100 | 1.2316 | 0.000 | 56.26 | 92 | 12.81 | 4.27× |
 | room-32-32-4 n50m50 | 100 | 1.1761 | 0.000 | 23.79 | 51 | 9.28 | 6.40× |
 | room-32-32-4 n50m75 | 100 | 1.1711 | 0.000 | 31.01 | 64 | 10.56 | 3.12× |
 | room-32-32-4 n50m100 | 99 | 1.2091 | 0.000 | 46.28 | 72 | 11.05 | 26.17× |
-
-(Missing: room n20m75, room n35m100 — timed out, recovery job `18236650` pending.)
 
 **Both degrade**, as expected this far OOD: ratio ~1.21–1.24 (vs ~1.05 in-range) and exact-match ≈ 0 —
 at M=50–100 the NN never exactly reproduces the solver's cost, but still lands ~20% above optimal.
@@ -649,7 +651,8 @@ Per-instance CSVs, **cluster only** (`results/` git-ignored), same columns as Ex
 nn_plan_ms, solver_ms`):
 
 - `results/fullpipe_paper/{current,larger}/<map>_n{N}m{M}.csv` — Exp 12, 36 files each (200 rows)
-- `results/fullpipe_paper_xl/{current,larger}/<map>_n{N}m{M}.csv` — Exp 13, 34 files each (≤100 rows)
+- `results/fullpipe_paper_xl/{current,larger}/<map>_n{N}m{M}.csv` — Exp 13, 36 files each (≤100 rows)
 
 Aggregate with `evaluation/agg_paper_maps.py --base <dir> --ns <N,…> --ms <M,…>` (prints per-config,
-per-model, by-map, by-(N,M)). Jobs: 18227874/18227875 (Exp 12 eval), 18229490/18229491 (Exp 13 XL).
+per-model, by-map, by-(N,M)). Jobs: 18227874/18227875 (Exp 12 eval), 18229490/18229491 (Exp 13 XL),
+18236650 (Exp 13 room-cell recovery).
