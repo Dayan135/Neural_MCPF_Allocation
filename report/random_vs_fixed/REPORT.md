@@ -61,6 +61,20 @@ where C's cost ratio blows out to 1.127 (h128) / 1.083 (h256) and exact-match co
 C's disadvantage is small at M=10 and widens sharply at M=30 — because high-M instances require
 long multi-goal tours, and on `maze` those tours must thread the corridors C never learned.
 
+## Figures
+
+The gap is entirely the maze — on empty/random/room, B and C tie:
+
+![C vs B by map](fig1_by_map_h128.png)
+
+On the maze, C's execution cost blows up with M while B stays flat (both model sizes):
+
+![maze cost ratio by M](fig2_maze_by_M.png)
+
+C's overall deficit grows with M — but that trend is driven by the maze:
+
+![C vs B by M](fig3_by_M_h128.png)
+
 ## Interpretation
 
 Random Bernoulli-wall grids resemble the `empty`/`random-20` maps (scattered or no obstacles),
