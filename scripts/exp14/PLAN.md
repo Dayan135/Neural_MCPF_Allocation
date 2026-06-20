@@ -1,5 +1,9 @@
 # Random-vs-Fixed-Map Training Implementation Plan
 
+> **Source of truth:** the committed `.sh` files in this folder, not the snippets embedded below.
+> Since this plan was written they received operational tweaks (commit `7048803`): gen `--mem`
+> 16G→32G (dense-grid OOM) and eval `--instance_timeout 600` (cap a pathological CBS solve). The
+> embedded snippets below are not updated for these.
 
 **Goal:** Train two models (C1 h128/L6, C2 h256/L8) on random 32×32 grids with 0–50% wall density at N∈{5,10,15}×M∈{10,20,30}, evaluate them on the 4 real benchmark maps, and compare against the fixed-map models (B1/B2) to decide whether random-diverse or fixed-map training transfers better. Separately, evaluate the old model (A) at large N/M on the real maps locally. Conclude with a zero-shot XL extrapolation on whichever family wins.
 
