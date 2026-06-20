@@ -512,7 +512,42 @@ shorter tours). maze is "easiest" by ratio (walls inflate the absolute optimum, 
 relative gap). Speedup is modest (1.2–1.5×) and <1× on several maze/room high-M cells: single-instance
 CBS dominates both pipelines, so only the LKH allocation call is saved (cf. Exp 9/10).
 
-## Exp 13 — zero-shot XL extrapolation to paper-scale N/M (paper_*_s0, 2026-06-18)
+## Exp 13.a — old model on real maps, small N/M (large_s0, 2026-06-17)
+
+Zero-shot eval of the Exp 11 model **A** (h128/L6, trained on random 8–12 grids, N≤5×M≤8) on the 4
+RobustMCPF benchmark maps (empty, random-20, maze, room; 32×32) at N≤5×M≤8, 200 inst/config.
+**Headline:** model A generalizes to the real maps with no degradation — mean execution-cost ratio
+**1.019**, 0% infeasible; **structured maps (maze/room) are *easier* than open** because walls
+disambiguate allocation (they break the ties an open grid leaves to chance). No full-pipeline speedup
+at this scale: roomy maps → ~0 collisions → the solver's CBS is trivial and never re-roots, so there
+is nothing for the NN to skip. Full writeup + figures: `report/real_maps/REPORT.md`.
+
+## Exp 13.b — old model on real maps, large N/M (large_s0 vs B1, 2026-06-18)
+
+Same model A pushed to the paper-scale regime **N∈{5,10,15} × M∈{10,20,30}** on the 4 maps, 200
+inst/config, vs the same-architecture map-trained **B1** (Exp 12) on identical instances (seed
+987654321). **Verdict: model A does NOT extrapolate across scale.** Mean execution-cost ratio
+**A=1.246 vs B1=1.048**. M is the cliff (1.08 → 1.36 as M 10→30); the near-tie property (Exp 13.a)
+breaks at large M; and the *scissors* — at M=30, **more agents HURT A (1.28 → 1.44 over N) but HELP
+B1 (1.10 → 1.05)**: A, trained on N≤5, mis-coordinates beyond its range. Retraining at scale is
+justified. Tables + figures: `report/oldmodel_large_nm/REPORT.md`.
+
+## Exp 14 — random-diverse vs fixed-map training (C vs B, 2026-06-19)
+
+Controlled comparison: **C1/C2** copy the **B1/B2** recipe (Exp 12) exactly, swapping *only* the
+training data — random 32×32 grids, per-instance wall density uniform in [0, 0.5], 80k/config —
+instead of the 4 fixed maps. Both families evaluated on the 4 real maps, 200 inst/config, identical
+instances. **Verdict: fixed-map (B) beats random-diverse (C)** — h128 1.048 vs 1.075, h256 1.052 vs
+1.066 — **but the entire gap is the maze** (h128 maze: B 1.029 vs C 1.127); on empty/random/room the
+two tie, and h256 C even edges B on empty. Random Bernoulli walls transfer to unstructured maps but
+never learned the maze's corridor structure. **Selects B as the family for Exp 15.** Full tables:
+`report/random_vs_fixed/REPORT.md`.
+
+## Exp 15 — zero-shot XL extrapolation to paper-scale N/M (B = Exp-14 winner, paper_*_s0, 2026-06-18)
+
+Exp 14 selected the **fixed-map family (B)**, so its zero-shot extrapolation toward the paper's
+N≤50/M≤100 is the conclusion experiment. (This is the run formerly labelled Exp 13; renumbered after
+13.a/13.b/14 were inserted.)
 
 **Setup.** Both models are size-agnostic, so evaluate them far beyond their N≤15/M≤30 training range:
 **N∈{20,35,50} × M∈{50,75,100}** on the same 4 maps (toward the paper's N≤50/M≤100), no retraining.
@@ -651,8 +686,8 @@ Per-instance CSVs, **cluster only** (`results/` git-ignored), same columns as Ex
 nn_plan_ms, solver_ms`):
 
 - `results/fullpipe_paper/{current,larger}/<map>_n{N}m{M}.csv` — Exp 12, 36 files each (200 rows)
-- `results/fullpipe_paper_xl/{current,larger}/<map>_n{N}m{M}.csv` — Exp 13, 36 files each (≤100 rows)
+- `results/fullpipe_paper_xl/{current,larger}/<map>_n{N}m{M}.csv` — Exp 15, 36 files each (≤100 rows)
 
 Aggregate with `evaluation/agg_paper_maps.py --base <dir> --ns <N,…> --ms <M,…>` (prints per-config,
-per-model, by-map, by-(N,M)). Jobs: 18227874/18227875 (Exp 12 eval), 18229490/18229491 (Exp 13 XL),
-18236650 (Exp 13 room-cell recovery).
+per-model, by-map, by-(N,M)). Jobs: 18227874/18227875 (Exp 12 eval), 18229490/18229491 (Exp 15 XL),
+18236650 (Exp 15 room-cell recovery). Exp 14 (random C): gen 18243314, eval 18259262/18259263.
