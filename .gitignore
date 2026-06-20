@@ -17,3 +17,12 @@ results/
 
 # Superpowers working docs (plans/brainstorms — local only)
 docs/superpowers/
+
+# LaTeX build intermediates (keep .tex and .pdf) + editor swap files
+*.aux
+*.log
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.swp
