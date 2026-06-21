@@ -26,3 +26,7 @@ docs/superpowers/
 *.fdb_latexmk
 *.synctex.gz
 *.swp
+
+# Rendered presentation decks (regenerate from the .md source)
+presentation/*.html
+presentation/*.pptx
