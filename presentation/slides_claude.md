@@ -20,10 +20,9 @@ style: |
 A transformer that replaces a combinatorial solver's allocation —
 **near-optimal, any size, much faster at scale.**
 
-<span class="small">Ofek Yabo · Dayan [last name] — Multi-Agent Systems, 2026</span>
+<span class="small">Ofek Yabo · Dayan Badalbaev — Multi-Agent Systems, 2026</span>
 
-<!-- TODO(authors): replace "[last name]" with Dayan's surname before exporting. Add ID numbers
-     only to the exported PDF/PPTX you submit, NOT here (repo is public). -->
+<!-- Note: add ID numbers only to the exported PDF/PPTX you submit, NOT here (repo is public). -->
 
 <!--
 One-sentence framing: we taught a neural network to make the expensive decision a
