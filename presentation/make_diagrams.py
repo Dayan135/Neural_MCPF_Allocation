@@ -86,8 +86,8 @@ def pipeline_solver_vs_nn():
     ax.text(0.2, 2.6, "Ours (NN allocator)", fontsize=12, color=RED, fontweight="bold")
     _box(ax, 0.5, 1.0, 3.0, 1.2, "Instance\n(agents, goals, map)", LIGHT, NAVY, 9)
     _box(ax, 4.6, 1.0, 3.4, 1.2, "NN\nallocation", LIGHTRED, RED, 10, RED, True)
-    _box(ax, 9.1, 1.0, 3.2, 1.2, "goal ordering\n+ CBS", LIGHT, NAVY, 10)
-    _box(ax, 13.4, 1.0, 2.6, 1.2, "Paths\n(~1-6% over opt)", LIGHT, NAVY, 9)
+    _box(ax, 9.1, 1.0, 3.2, 1.2, "CBS\ncollision planning", LIGHT, NAVY, 10)
+    _box(ax, 13.4, 1.0, 2.6, 1.2, "Paths\n(suboptimal)", LIGHT, NAVY, 9)
     for x1, x2 in [(3.5, 4.6), (8.0, 9.1), (12.3, 13.4)]:
         _arrow(ax, x1, 1.6, x2, 1.6, RED if x1 == 3.5 else NAVY)
     ax.text(16.4, 3.4, "Only the allocation\nbox changes;\nCBS is shared.", fontsize=10,
@@ -267,7 +267,97 @@ def method_flow():
     p = os.path.join(OUT, "method_flow.png"); fig.savefig(p, dpi=150); plt.close(fig); print("wrote", p)
 
 
+# ── 10. Exp 15 — zero-shot XL extrapolation (h128 vs h256 by N) ──────────────
+def xl_extrapolation():
+    Ns = [20, 35, 50]
+    h128 = [1.245, 1.246, 1.242]   # mean cost ratio by N (RESULTS.md Exp 15)
+    h256 = [1.229, 1.209, 1.185]
+    fig, ax = plt.subplots(figsize=(7.2, 4.8))
+    x = np.arange(len(Ns)); w = 0.36
+    ax.bar(x - w/2, [v - 1.0 for v in h128], w, bottom=1.0, color=NAVY, label="h128 (small)")
+    ax.bar(x + w/2, [v - 1.0 for v in h256], w, bottom=1.0, color=RED, label="h256 (large)")
+    for xi, v in zip(x - w/2, h128):
+        ax.annotate(f"{v:.3f}", (xi, v), textcoords="offset points", xytext=(0, 3), ha="center", fontsize=9)
+    for xi, v in zip(x + w/2, h256):
+        ax.annotate(f"{v:.3f}", (xi, v), textcoords="offset points", xytext=(0, 3), ha="center", fontsize=9)
+    ax.axhline(1.0, color="k", linestyle=":", alpha=0.6, label="optimal")
+    ax.set_xticks(x); ax.set_xticklabels([f"N={n}" for n in Ns])
+    ax.set_ylabel("mean execution-cost ratio (NN / solver)")
+    ax.set_ylim(1.0, 1.36)
+    ax.set_title("Exp 15: zero-shot XL (M≤100) — the larger model wins at scale", color=NAVY, fontsize=12)
+    ax.grid(True, axis="y", alpha=0.3); ax.legend(loc="upper right", framealpha=1.0)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.subplots_adjust(bottom=0.22)
+    fig.text(0.5, 0.04, "zero-shot, no retraining  ·  inference 5.9–9.4× faster than the solver",
+             ha="center", fontsize=9.5, color=GREY, style="italic")
+    p = os.path.join(OUT, "xl_extrapolation.png"); fig.savefig(p, dpi=150); plt.close(fig); print("wrote", p)
+
+
+# ── 11. Exp 15 detail — per-(N,M) cost-ratio heatmaps (h128, h256) + speedup ──
+def xl_detail():
+    Ms = [50, 75, 100]; Ns = [20, 35, 50]
+    h128 = np.array([[1.204, 1.283, 1.248], [1.217, 1.288, 1.233], [1.221, 1.289, 1.216]])
+    h256 = np.array([[1.211, 1.231, 1.246], [1.188, 1.211, 1.227], [1.159, 1.184, 1.211]])
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4.2), constrained_layout=True,
+                             gridspec_kw={"width_ratios": [1, 1, 0.7]})
+    vmin, vmax = 1.15, 1.29
+    im = None
+    for ax, data, name in [(axes[0], h128, "h128 (small)"), (axes[1], h256, "h256 (large)")]:
+        im = ax.imshow(data, cmap="RdYlGn_r", vmin=vmin, vmax=vmax)
+        ax.set_xticks(range(3)); ax.set_xticklabels([f"M={m}" for m in Ms])
+        ax.set_yticks(range(3)); ax.set_yticklabels([f"N={n}" for n in Ns])
+        ax.set_title(f"cost ratio — {name}", fontsize=11, color=NAVY)
+        for i in range(3):
+            for j in range(3):
+                ax.text(j, i, f"{data[i, j]:.3f}", ha="center", va="center", fontsize=9, color="black")
+    fig.colorbar(im, ax=[axes[0], axes[1]], fraction=0.045, pad=0.02, label="NN / solver")
+    sp = axes[2]
+    sp.bar(["h128", "h256"], [9.4, 5.9], color=[NAVY, RED], width=0.55)
+    for i, v in enumerate([9.4, 5.9]):
+        sp.text(i, v + 0.15, f"{v}×", ha="center", fontsize=12, fontweight="bold")
+    sp.set_ylim(0, 11); sp.set_ylabel("mean speedup (× vs solver)")
+    sp.set_title("speed", fontsize=11, color=NAVY)
+    sp.spines[["top", "right"]].set_visible(False)
+    fig.suptitle("Exp 15 detail: cost ratio across N×M (green = closer to optimal) + speedup",
+                 fontsize=12.5, color=NAVY)
+    p = os.path.join(OUT, "xl_heatmaps_speedup.png"); fig.savefig(p, dpi=150); plt.close(fig); print("wrote", p)
+
+
+# ── 12. Model inventory table (A / B1 / B2 / C1 / C2) ────────────────────────
+def model_inventory():
+    cols = ["Model", "Net (params)", "Training data", "Scale", "Train size"]
+    rows = [
+        ["A (old)", "h128/L6 — 1.2M", "random grids 8–12, walls 0.1–0.5", "N ≤ 5 · M ≤ 8", "≈840k"],
+        ["B1", "h128/L6 — 1.2M", "the 4 real benchmark maps (32×32)", "N 5–15 · M 10–30", "≈720k"],
+        ["B2", "h256/L8 — 6.3M", "the 4 real benchmark maps (32×32)", "N 5–15 · M 10–30", "≈720k"],
+        ["C1", "h128/L6 — 1.2M", "random 32×32 grids, walls 0–50%", "N 5–15 · M 10–30", "≈720k"],
+        ["C2", "h256/L8 — 6.3M", "random 32×32 grids, walls 0–50%", "N 5–15 · M 10–30", "≈720k"],
+    ]
+    rowbg = ["#eeeeee", LIGHT, LIGHT, LIGHTRED, LIGHTRED]
+    modelcol = [GREY, NAVY, NAVY, RED, RED]
+    fig, ax = plt.subplots(figsize=(12, 3.6)); ax.axis("off")
+    tbl = ax.table(cellText=rows, colLabels=cols, loc="center", cellLoc="left",
+                   colWidths=[0.10, 0.18, 0.34, 0.22, 0.12])
+    tbl.auto_set_font_size(False); tbl.set_fontsize(12); tbl.scale(1, 2.0)
+    for j in range(len(cols)):
+        c = tbl[0, j]; c.set_facecolor(NAVY)
+        c.set_text_props(color="white", fontweight="bold")
+    for i in range(len(rows)):
+        for j in range(len(cols)):
+            cell = tbl[i + 1, j]
+            cell.set_facecolor(rowbg[i])
+            cell.set_edgecolor("white")
+            if j == 0:
+                cell.set_text_props(color=modelcol[i], fontweight="bold")
+    ax.set_title("Our models — architecture × training data", color=NAVY, fontsize=13, pad=12)
+    fig.tight_layout()
+    p = os.path.join(OUT, "model_inventory.png"); fig.savefig(p, dpi=150, bbox_inches="tight")
+    plt.close(fig); print("wrote", p)
+
+
 if __name__ == "__main__":
+    model_inventory()
+    xl_detail()
     bundle_vs_split()
     pipeline_solver_vs_nn()
     D_G_matrices()
@@ -277,4 +367,5 @@ if __name__ == "__main__":
     motivation()
     attention_sketch()
     method_flow()
+    xl_extrapolation()
     print("\nAll diagrams written to", OUT)

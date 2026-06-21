@@ -154,7 +154,8 @@ content_slide(
     "The bottleneck — and our idea",
     ["LKH allocation grows with problem size; CBS is needed by both",
      "Idea: replace only the allocation with a neural net (near-instant after training)",
-     "Expected: imitate the solver + a big speedup, especially at scale"],
+     "Expected: imitate the solver → big speedup, especially at scale",
+     "Accept suboptimal solutions — the NN won't always find the optimum"],
     note="Swap the expensive combinatorial allocator for a learned one, keep everything else. "
          "Hypothesis: close to solver quality, large speedup as N,M grow.")
 
@@ -168,7 +169,8 @@ content_slide(
 content_slide(
     "How we represent the problem",
     ["D (N×M): agent → goal   ·   G (M×M): goal → goal (normalized BFS)",
-     "distances, not coordinates"],
+     "distances, not coordinates",
+     "same distances as LKH-TSP — but two matrices (D, G), not one big cost table"],
     images=["D_G_matrices.png"],
     note="BFS distances respect walls and transfer across maps. G is the KEY feature — which goals are "
          "near each other (which to bundle); adding G lifted accuracy +14–18 points, more than any "
@@ -176,8 +178,10 @@ content_slide(
 
 content_slide(
     "The network",
-    ["universal transformer: row attention (agent↔goals) · column attention (goal↔agents)",
-     "column-softmax output · loss = CE + λ·MinSum"],
+    ["row attention — each agent attends over its goals",
+     "column attention — each goal attends over its agents",
+     "per block: row × column attention + FFN, repeated ×L",
+     "output: column softmax  ·  loss = CE + λ·MinSum"],
     images=["attention_sketch.png"],
     note="Each agent-goal pair is embedded; stacked row/column attention captures the combinatorial "
          "structure. Output is a per-goal distribution over agents. Trained with cross-entropy to "
@@ -192,13 +196,16 @@ content_slide(
          "unordered; attention handles variable length). Output: Linear(d→1) → N×M logits → column "
          "softmax → argmax per goal = the binary allocation matrix. Code: GoalAllocTransformerUniversal.")
 
-content_slide(
-    "Small vs. big model",
-    ["h128/L6 = 1.2M params   ·   h256/L8 = 6.3M",
-     "preview: small wins in-distribution, big wins far out-of-distribution"],
-    images=["params_bar.png"],
-    note="Identical except width/depth. In-distribution the small model is better and faster (big "
-         "overfits, Exp 12); at extreme extrapolation the big one generalizes better (Exp 15).")
+# Build slides: advance with the arrow keys to walk through the pipeline one stage at a time.
+for _k in range(1, 8):
+    content_slide(
+        "One model for ANY N, M — step by step",
+        images=[f"anynm_step{_k}.png"],
+        note="Advance with the arrow keys. Pre = data prep (instance → D,G). Net = shared-weight "
+             "transformer: embed each scalar → ℝ^d token (N×M grid), row+column attention ×L, per-token "
+             "logit ℝ^d→1, column softmax. Post = argmax decode. G is sum-pooled per goal and ADDED into "
+             "the D tokens (context, not extra tokens) → output stays N×M. d and L are fixed; the token "
+             "count N×M grows with the instance — no fixed-size vector.")
 
 content_slide(
     "Method",
@@ -210,10 +217,27 @@ content_slide(
          "full_pipeline_eval.py, tests/.")
 
 content_slide(
+    "Small vs. big model",
+    ["h128/L6 = 1.2M params   ·   h256/L8 = 6.3M",
+     "preview: small wins in-distribution, big wins far out-of-distribution"],
+    images=["params_bar.png"],
+    note="Identical except width/depth. In-distribution the small model is better and faster (big "
+         "overfits, Exp 12); at extreme extrapolation the big one generalizes better (Exp 15).")
+
+content_slide(
+    "Our models: architecture × training data (A / B / C)",
+    ["A = original (small scale)  ·  B = trained on the real maps  ·  C = random-diverse grids",
+     "suffix 1 = small net (h128, 1.2M)  ·  2 = big net (h256, 6.3M)"],
+    images=["model_inventory.png"],
+    note="Two axes: the net (h128 vs h256) and the training data. A = original small-scale model "
+         "(random small grids). B = trained on the 4 real benchmark maps; C copies B's recipe but trains "
+         "on random 32×32 grids (0–50% walls) — a controlled data swap. Train sizes: A ≈840k, B & C ≈720k.")
+
+content_slide(
     "Results: near the solver, cheaper to run",
-    ["execution-cost ratio ~1.02–1.05 · high exact-cost match · 0% infeasible",
-     "speedup: a few × single-instance, ~10³× batched (allocation-only)"],
-    images=["heatmap_cost.png"],
+    ["cost ratio ~1.02–1.05 (≈1–6% above optimal)",
+     "exact-cost match ~60–99% — both track M, nearly flat in N"],
+    images=["heatmap_cost.png", "heatmap_match.png"],
     note="Across 28 small configs the NN is ~1–6% above optimal; large diverse model mean 1.020. Most "
          "disagreements are cost-equivalent ties (exact-cost match ≫ exact-allocation match). CBS "
          "dominates full-pipeline time, so single-instance speedup is modest; batched it's ~1000×.")
@@ -227,13 +251,24 @@ content_slide(
 
 content_slide(
     "Results: generalization studies",
-    ["transfers across geometry, not scale · random≈fixed training except the maze · XL: 5.9–9.4×"],
     images=["scissors_13b.png", "random_vs_fixed_bymap.png"],
     note="(a) small model zero-shot on real maps at small N/M = 1.019, but at large N/M fails (1.246 vs "
          "map-trained 1.048); scissors at M=30 — more agents hurt the old model (1.28→1.44), help the "
          "in-range one (1.10→1.05): generalizes across SHAPE, not SCALE. (b) random-grid training ties "
          "fixed-map everywhere except the maze (1.029 vs 1.127): random walls never make corridors. "
          "(c) at N≤50/M≤100 the big model extrapolates best (1.208 vs 1.244), speedup 5.9–9.4×.")
+
+content_slide(
+    "Pushing further: zero-shot XL extrapolation (Exp 15)",
+    ["B models run zero-shot at N∈{20,35,50} × M∈{50,75,100} (no retraining)",
+     "the bigger model (h256) wins out-of-distribution (1.208 vs 1.244), and inference is "
+     "5.9–9.4× faster than the solver"],
+    images=["xl_heatmaps_speedup.png"],
+    caption="green = closer to optimal · h256 better across the grid (esp. N=50) · M=75 is the hard column",
+    note="Zero-shot XL toward the paper's N≤50/M≤100. Verdict flips vs in-distribution (Exp 12): the "
+         "capacity that overfit in range is the better generalizer at scale — h256 1.208 vs h128 1.244, "
+         "worst-case gap roughly halved (224→124). M=75 hardest for both; maze easiest (≈1.15–1.18). "
+         "Speedup 5.9–9.4× as LKH's TSP grows. Numbers: RESULTS.md Exp 15.")
 
 content_slide(
     "When to use the NN vs. the exact solver",
@@ -257,52 +292,35 @@ content_slide(
      "Idea: a small universal transformer imitates it from distances — near-optimal",
      "Generalizes: any N,M; across scale and (with the right data) geometry",
      "Payoff: 5.9–9.4× at scale, within ~20% of optimal — use where speed/scale matter"],
-    note="Recap the 4 messages. Future work: tour-aware loss + a learned goal-ordering head.")
+    note="Recap the 4 messages.")
 
 content_slide(
     "Thank you — questions?",
-    ["repo: Neural_MCPF_Allocation · RobustMCPF (LKH + CBS)"],
-    note="Keep the backup slides ready for likely questions.")
+    ["Acknowledgment: the RobustMCPF solver (LKH + CBS) is the work of Yehonatan Kidushim "
+     "(github.com/yehonatan280198)",
+     "repo: Neural_MCPF_Allocation · RobustMCPF (LKH + CBS)"],
+    note="Keep the backup slides ready for likely questions. Credit RobustMCPF (LKH+CBS) to Yehonatan Kidushim.")
 
-# ---- backup slides ----
+# ---- extra / backup slides ----
 content_slide(
-    "(Backup) Loss",
+    "(Extra) Loss",
     ["L = L_CE + λ·L_MinSum   (λ = 0.1)",
      "CE — per-goal cross-entropy vs the solver (imitation)",
      "MinSum = Σ P·D — mild geometric regularizer"],
     note="CE drives imitation; MinSum prevents degenerate uniform predictions early. Code: model/losses.py.")
 
 content_slide(
-    "(Backup) Full results — heatmaps",
-    images=["heatmap_cost.png", "heatmap_match.png"],
-    note="Difficulty gradient is horizontal — driven by M (goals), nearly flat in N. Worst cell still within ~5%.")
-
-content_slide(
-    "(Backup) Overfitting & small-vs-big",
+    "(Extra) Overfitting & small-vs-big",
     images=["convergence.png"],
     note="Val loss bottoms ~epoch 22 then rises; best-val-loss checkpointing = effective early stopping. "
          "Explains why the big model overfits in-distribution but generalizes better far-OOD.")
 
 content_slide(
-    "(Backup) Why random training fails on the maze",
-    images=["maps_panel.png", "random_vs_fixed_bymap.png"],
-    note="Random Bernoulli walls ≈ empty/random/room statistically, but never produce long corridors → "
-         "the random-trained model never learned to thread them; the entire fixed-vs-random gap is the "
-         "maze (worst cell maze n5m30: 1.075 vs 1.362).")
-
-content_slide(
-    "(Backup) Metrics",
+    "(Extra) Metrics",
     ["Offline — allocation agreement (per-goal / full-assignment accuracy)",
      "Execution cost — true CBS path-length ratio (NN / solver)",
      "Exact match — identical integer cost (≫ exact-allocation match → ties)"],
     note="Code: evaluation/evaluate.py (offline), full_pipeline_eval.py (execution cost).")
-
-content_slide(
-    "(Backup) Limitations & next steps",
-    ["brute-force goal ordering is O(k!) — mitigated by nearest-neighbor + 2-opt fallback",
-     "CBS execution cost is not differentiable",
-     "next: tour-aware loss · learned goal-ordering head"],
-    note="Code: full_pipeline_eval.order_goals. Levers to push quality + remove the last classical bottleneck.")
 
 n_slides = len(prs.slides._sldIdLst)
 prs.save(OUT)

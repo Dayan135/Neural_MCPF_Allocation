@@ -87,12 +87,14 @@ combinatorial, badly-scaling part. Code: solver_wrapper.py → RobustMCPF/.
 - **LKH allocation** cost grows with problem size; **CBS** is needed by both
 - **Idea:** replace *only* the allocation with a neural net (near-instant after training)
 
-**What we expected:** imitate the solver's allocations + a big speedup, especially at scale.
+**What we expected:** imitate the solver for a big speedup, especially at scale —
+accepting suboptimal solutions (the NN won't always find the optimum).
 
 <!--
 We swap the expensive combinatorial allocator for a learned one and keep everything else.
-Hypothesis going in: close to solver quality, large speedup as N,M grow. (Spoiler: the
-speed win is real but concentrated at scale.)
+Hypothesis going in: close to solver quality, large speedup as N,M grow — and crucially we
+accept SUBOPTIMAL allocations: it's expected the NN won't always match the exact optimum, we
+trade a little cost for speed. (Spoiler: the speed win is real but concentrated at scale.)
 -->
 
 ---
@@ -117,6 +119,7 @@ both on identical instances/seed.
 
 - **D** (N×M): agent → goal   ·   **G** (M×M): goal → goal
 - *distances, not coordinates*
+- same distances as LKH-TSP — but two matrices (D, G), not one big cost table
 
 ![w:720](assets/D_G_matrices.png)
 
@@ -132,10 +135,12 @@ more than any architecture/size/data change. Code: dataset_generation/distance.p
 
 **A universal transformer**
 
-- **row attention** (agent ↔ its goals) · **column attention** (goal ↔ its agents)
-- **column softmax** output · loss = **CE + λ·MinSum**
+- **row attention** — each agent attends over its goals
+- **column attention** — each goal attends over its agents
+- per block: **row × column attention** + FFN, repeated ×L
+- output: **column softmax**  ·  loss = **CE + λ·MinSum**
 
-![h:320](assets/attention_sketch.png)
+![h:350](assets/attention_sketch.png)
 
 <!--
 Each agent-goal pair is embedded; stacked row/column attention captures the combinatorial
@@ -162,21 +167,65 @@ Code: model/network.py GoalAllocTransformerUniversal.forward; decode in evaluati
 
 ---
 
-## Small vs. big model
+## One model for ANY N, M — step by step
 
-**Two sizes, same recipe**
+![h:430](assets/anynm_step1.png)
 
-- h128/L6 = **1.2M** params   ·   h256/L8 = **6.3M**
+<!-- step 1/7: instance — N agents, M goals (two sizes: 2×2 and 4×6). Advance with → to build it. -->
 
-![h:300](assets/params_bar.png)
+---
 
-<span class="small">preview: small wins in-distribution, big wins far out-of-distribution</span>
+<!-- _paginate: hold -->
+## One model for ANY N, M — step by step
 
-<!--
-Identical except width/depth. In-distribution the small model is better and faster (big
-overfits, Exp 12); at extreme extrapolation the big one generalizes better (Exp 15). We'll
-see both.
--->
+![h:430](assets/anynm_step2.png)
+
+<!-- step 2/7: distances D (N×M) and G (M×M). -->
+
+---
+
+<!-- _paginate: hold -->
+## One model for ANY N, M — step by step
+
+![h:430](assets/anynm_step3.png)
+
+<!-- step 3/7: embed each agent–goal pair → N×M token grid (no positional embeddings). -->
+
+---
+
+<!-- _paginate: hold -->
+## One model for ANY N, M — step by step
+
+![h:430](assets/anynm_step4.png)
+
+<!-- step 4/7: row + column attention (works on any sequence length). -->
+
+---
+
+<!-- _paginate: hold -->
+## One model for ANY N, M — step by step
+
+![h:430](assets/anynm_step5.png)
+
+<!-- step 5/7: shared linear head → N×M logits. -->
+
+---
+
+<!-- _paginate: hold -->
+## One model for ANY N, M — step by step
+
+![h:430](assets/anynm_step6.png)
+
+<!-- step 6/7: column softmax — per goal, a distribution over agents. -->
+
+---
+
+<!-- _paginate: hold -->
+## One model for ANY N, M — step by step
+
+![h:430](assets/anynm_step7.png)
+
+<!-- step 7/7: argmax per goal → N×M allocation. Same weights, any size — no fixed-size vector. -->
 
 ---
 
@@ -196,12 +245,51 @@ full_pipeline_eval.py, tests/.
 
 ---
 
+## Small vs. big model
+
+**Two sizes, same recipe**
+
+- h128/L6 = **1.2M** params   ·   h256/L8 = **6.3M**
+
+![h:300](assets/params_bar.png)
+
+<span class="small">preview: small wins in-distribution, big wins far out-of-distribution</span>
+
+<!--
+Identical except width/depth. In-distribution the small model is better and faster (big
+overfits, Exp 12); at extreme extrapolation the big one generalizes better (Exp 15). We'll
+see both.
+-->
+
+---
+
+## Our models: architecture × training data (A / B / C)
+
+**A** = starting point (small scale) · **B** = trained on the real maps · **C** = random-diverse grids · suffix 1 = small net (h128), 2 = big net (h256)
+
+![h:330](assets/model_inventory.png)
+
+<!--
+Two axes: the NET (h128 vs h256) and the TRAINING DATA. A is our original small-scale model
+(random small grids, N≤5×M≤8). B is trained on the 4 real benchmark maps; C copies B's recipe
+exactly but trains on random 32×32 grids (0–50% walls) — a controlled data swap. Suffix 1 = small
+net (h128, 1.2M), 2 = big net (h256, 6.3M). Train sizes: A ≈840k samples, B & C ≈720k each.
+-->
+
+---
+
 ## Results: near the solver, cheaper to run
 
-- execution-cost ratio **~1.02–1.05** · high exact-cost match · **0% infeasible**
-- speedup: a few × single-instance, **~10³×** batched (allocation-only)
+- cost ratio **~1.02–1.05** (≈1–6% above optimal)
+- exact-cost match **~60–99%** — both track M, nearly flat in N
 
-![h:360](assets/heatmap_cost.png)
+<div class="cols">
+
+![h:330](assets/heatmap_cost.png)
+
+![h:330](assets/heatmap_match.png)
+
+</div>
 
 <!--
 Across 28 small configs the NN is ~1–6% above optimal; the large diverse model hits mean
@@ -235,8 +323,6 @@ The 4 standard RobustMCPF benchmark maps. Only maze and room carry corridor/room
 
 </div>
 
-- transfers across **geometry**, not **scale** · random≈fixed training **except the maze** · XL: **5.9–9.4×**
-
 <!--
 (a) The small model zero-shot on real maps at small N/M = 1.019, but at large N/M fails
 (1.246 vs map-trained 1.048); scissors at M=30 — more agents hurt the old model (1.28→1.44),
@@ -244,6 +330,24 @@ help the in-range one (1.10→1.05): generalizes across map SHAPE, not problem S
 (b) random-grid training ties fixed-map everywhere except the maze (1.029 vs 1.127): random
 walls never make corridors. (c) at N≤50/M≤100 the big model extrapolates best (1.208 vs 1.244),
 speedup 5.9–9.4×. Code: Exp 13.b/14/15 in RESULTS.md.
+-->
+
+---
+
+## Pushing further: zero-shot XL extrapolation (Exp 15)
+
+- B models run zero-shot at **N∈{20,35,50} × M∈{50,75,100}** (no retraining)
+- the **bigger model (h256) wins** out-of-distribution (**1.208 vs 1.244**) and inference is **5.9–9.4× faster** than the solver
+
+![h:330](assets/xl_heatmaps_speedup.png)
+
+<span class="small">green = closer to optimal · h256 better across the grid (esp. N=50) · M=75 is the hard column</span>
+
+<!--
+Zero-shot XL toward the paper's N≤50/M≤100. Verdict flips vs in-distribution (Exp 12): the
+capacity that overfit in range becomes the better generalizer at scale — h256 1.208 vs h128
+1.244, worst-case gap roughly halved (224→124 steps). M=75 is hardest for both; maze easiest
+(≈1.15–1.18). Speedup 5.9–9.4× as LKH's TSP grows. Numbers: RESULTS.md Exp 15.
 -->
 
 ---
@@ -284,8 +388,6 @@ Regenerate: presentation/make_demo.py.
 - **Generalizes:** any N,M; across scale and (with the right data) geometry
 - **Payoff:** **5.9–9.4×** at scale, within ~20% of optimal — use it where speed/scale matter
 
-<span class="small">next: tour-aware loss · learned goal-ordering head</span>
-
 <!--
 Recap the 4 messages. Future work: bring the solver's true tour cost into the loss, and
 replace brute-force goal ordering with a learned head.
@@ -295,14 +397,17 @@ replace brute-force goal ordering with a learned head.
 
 ## Thank you — questions?
 
+**Acknowledgment:** the RobustMCPF solver (LKH + CBS) is the work of
+Yehonatan Kidushim — github.com/yehonatan280198
+
 <span class="small">repo: Neural_MCPF_Allocation · RobustMCPF (LKH + CBS)</span>
 
-<!-- Keep the backup slides (O1–O7) ready for likely questions. -->
+<!-- Keep the extra slides ready for likely questions. Credit RobustMCPF (LKH+CBS) to Yehonatan Kidushim. -->
 
 ---
-<!-- ============================ OPTIONAL / BACKUP ============================ -->
+<!-- ============================ EXTRA SLIDES ============================ -->
 
-## (Backup) Loss
+## (Extra) Loss
 
 $$\mathcal{L} = \mathcal{L}_{CE} + \lambda\,\mathcal{L}_{MinSum},\quad \lambda=0.1$$
 
@@ -313,21 +418,7 @@ $$\mathcal{L} = \mathcal{L}_{CE} + \lambda\,\mathcal{L}_{MinSum},\quad \lambda=0
 
 ---
 
-## (Backup) Full results — heatmaps
-
-<div class="cols">
-
-![h:340](assets/heatmap_cost.png)
-
-![h:340](assets/heatmap_match.png)
-
-</div>
-
-<!-- Difficulty gradient is horizontal — driven by M (goals), nearly flat in N. Worst cell still within ~5%. -->
-
----
-
-## (Backup) Overfitting & small-vs-big
+## (Extra) Overfitting & small-vs-big
 
 ![h:380](assets/convergence.png)
 
@@ -338,38 +429,10 @@ stopping. Explains why the big model overfits in-distribution but generalizes be
 
 ---
 
-## (Backup) Why random training fails on the maze
-
-<div class="cols">
-
-![h:340](assets/maps_panel.png)
-
-![h:340](assets/random_vs_fixed_bymap.png)
-
-</div>
-
-<!--
-Random Bernoulli walls ≈ empty/random/room statistically, but never produce long corridors →
-the random-trained model never learned to thread them; the entire fixed-vs-random gap is the
-maze (worst cell maze n5m30: 1.075 vs 1.362).
--->
-
----
-
-## (Backup) Metrics
+## (Extra) Metrics
 
 - **Offline** — allocation agreement (per-goal / full-assignment accuracy)
 - **Execution cost** — true CBS path-length ratio (NN / solver)
 - **Exact match** — identical integer cost (≫ exact-allocation match → ties)
 
 <!-- Code: evaluation/evaluate.py (offline), full_pipeline_eval.py (execution cost). -->
-
----
-
-## (Backup) Limitations & next steps
-
-- brute-force goal ordering is O(k!) — mitigated by a nearest-neighbor + 2-opt fallback
-- CBS execution cost is **not differentiable**
-- next: **tour-aware loss** · **learned goal-ordering head**
-
-<!-- Code: full_pipeline_eval.order_goals. These are the levers to push quality + remove the last classical bottleneck. -->
