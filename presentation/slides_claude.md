@@ -3,12 +3,13 @@ marp: true
 theme: default
 paginate: true
 size: 16:9
+math: mathjax
 style: |
   section { font-family: Inter, Helvetica, Arial, sans-serif; font-size: 26px; }
   h1, h2 { color: #1F497D; }
   strong { color: #0070C0; }
   section::after { color: #888; font-size: 0.6em; }
-  img { display: block; margin: 0 auto; }
+  img { display: block; margin: 0 auto; max-height: 430px; }
   .cols { display: flex; gap: 24px; align-items: center; justify-content: center; }
   .small { font-size: 0.8em; color: #444; }
 ---
@@ -19,7 +20,10 @@ style: |
 A transformer that replaces a combinatorial solver's allocation —
 **near-optimal, any size, much faster at scale.**
 
-<span class="small">Multi-Agent Systems course · authors · 2026</span>
+<span class="small">Ofek Yabo · Dayan [last name] — Multi-Agent Systems, 2026</span>
+
+<!-- TODO(authors): replace "[last name]" with Dayan's surname before exporting. Add ID numbers
+     only to the exported PDF/PPTX you submit, NOT here (repo is public). -->
 
 <!--
 One-sentence framing: we taught a neural network to make the expensive decision a
@@ -35,7 +39,7 @@ trade is worth it.
 
 - warehouse robots · delivery fleets · search & rescue
 
-![w:760](assets/motivation.png)
+![h:330](assets/motivation.png)
 
 <!--
 The core decision in multi-agent coordination is the ALLOCATION: which agent takes
@@ -132,7 +136,7 @@ more than any architecture/size/data change. Code: dataset_generation/distance.p
 - **row attention** (agent ↔ its goals) · **column attention** (goal ↔ its agents)
 - **column softmax** output · loss = **CE + λ·MinSum**
 
-![w:640](assets/attention_sketch.png)
+![h:320](assets/attention_sketch.png)
 
 <!--
 Each agent-goal pair is embedded; stacked row/column attention captures the combinatorial
@@ -165,7 +169,7 @@ Code: model/network.py GoalAllocTransformerUniversal.forward; decode in evaluati
 
 - h128/L6 = **1.2M** params   ·   h256/L8 = **6.3M**
 
-![w:560](assets/params_bar.png)
+![h:300](assets/params_bar.png)
 
 <span class="small">preview: small wins in-distribution, big wins far out-of-distribution</span>
 
