@@ -2,7 +2,33 @@
 
 import pytest
 
-from grid_gen import generate_random_map, sample_agents_goals
+from grid_gen import generate_random_map, sample_agents_goals, load_map_file
+
+
+@pytest.mark.parametrize(
+    "name, obstacles",
+    [
+        ("empty-32-32.map", 0),
+        ("random-32-32-20.map", 205),
+        ("maze-32-32-2.map", 358),
+        ("room-32-32-4.map", 342),
+    ],
+)
+def test_load_map_file_known_benchmarks(name, obstacles):
+    m = load_map_file(name)
+    assert m["Rows"] == 32 and m["Cols"] == 32
+    assert len(m["Map"]) == 32 * 32
+    assert set(m["Map"]) <= {0, 1}
+    # '.' -> free (0), any other char -> obstacle (1); counts spot-checked
+    # against the raw .map files.
+    assert sum(m["Map"]) == obstacles
+
+
+def test_load_map_file_produces_placeable_grid(open_5x5):
+    # The loaded format must be consumable by sample_agents_goals.
+    m = load_map_file("empty-32-32.map")
+    agents, goals = sample_agents_goals(m, 5, M=10, seed=0)
+    assert len(agents) == 5 and len(goals) == 10
 
 
 @pytest.mark.parametrize("w, h", [(5, 5), (10, 8), (3, 12)])
