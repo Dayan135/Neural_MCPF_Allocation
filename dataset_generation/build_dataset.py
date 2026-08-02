@@ -8,6 +8,7 @@ Usage:
                             [--grid_w_max W2] [--grid_h_max H2]
                             [--obstacle_prob_max P2] [--map_file NAME]
                             [--seed S] [--out_dir DIR] [--num_workers K]
+                            [--instance_timeout SECONDS]
 
 --num_goals defaults to --num_agents (the N=M case from all current experiments).
 
@@ -55,7 +56,8 @@ def _try_one_sample(task):
     Each worker has its own process address space, so os.chdir inside
     solver_wrapper is safe — it does not affect other workers.
     """
-    grid_w, grid_h, num_agents, num_goals, obstacle_prob, seed, config_str, fixed_map = task
+    (grid_w, grid_h, num_agents, num_goals, obstacle_prob, seed, config_str,
+     fixed_map, instance_timeout) = task
     try:
         # fixed_map (a preloaded MapAndDims dict) pins the grid; otherwise each
         # instance gets a fresh random map. grid_w/grid_h are the fixed map's
@@ -73,7 +75,8 @@ def _try_one_sample(task):
     if np.any(G == float("inf")):
         return None
 
-    result = get_ground_truth(map_dims, agents, goals, config_str=config_str)
+    result = get_ground_truth(map_dims, agents, goals, config_str=config_str,
+                              instance_timeout=instance_timeout)
     if result is None:
         return None
 
@@ -108,6 +111,7 @@ def generate_split(
     grid_h_max: int | None = None,
     obstacle_prob_max: float | None = None,
     fixed_map: dict | None = None,
+    instance_timeout: float = 0.0,
 ) -> None:
     save_dir = os.path.join(out_dir, split)
     os.makedirs(save_dir, exist_ok=True)
@@ -130,7 +134,8 @@ def generate_split(
             h = int(rng.integers(grid_h, grid_h_max + 1)) if grid_h_max is not None else grid_h
             p = float(rng.uniform(obstacle_prob, obstacle_prob_max)) if obstacle_prob_max is not None else obstacle_prob
             config_str = f"{split}_{attempts}"
-            tasks.append((w, h, num_agents, num_goals, p, seed, config_str, fixed_map))
+            tasks.append((w, h, num_agents, num_goals, p, seed, config_str,
+                         fixed_map, instance_timeout))
             attempts += 1
         return tasks
 
@@ -186,6 +191,10 @@ def main() -> None:
     parser.add_argument("--out_dir", type=str, default=os.path.join("..", "data"))
     parser.add_argument("--num_workers", type=int, default=1,
                         help="Parallel solver workers (each is a separate process)")
+    parser.add_argument("--instance_timeout", type=float, default=0.0,
+                        help="Wall-clock cap (seconds) per solver call, 0 = disabled. "
+                             "Needed at N/M >= ~100: cbs_node_budget alone doesn't bound "
+                             "wall time once individual CBS node expansions get slow.")
     args = parser.parse_args()
 
     num_goals = args.num_goals if args.num_goals is not None else args.num_agents
@@ -214,6 +223,7 @@ def main() -> None:
         grid_h_max=args.grid_h_max,
         obstacle_prob_max=args.obstacle_prob_max,
         fixed_map=fixed_map,
+        instance_timeout=args.instance_timeout,
     )
 
 

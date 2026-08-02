@@ -5,6 +5,7 @@ The solver — not Hungarian — is the oracle so that the NN learns the same
 policy the solver implements, including collision-aware path costs.
 """
 
+import signal
 import sys
 import os
 import numpy as np
@@ -17,12 +18,21 @@ if _ROOT not in sys.path:
 from solver_wrapper import run_basic_mapf
 
 
+class _InstanceTimeout(Exception):
+    pass
+
+
+def _raise_timeout(signum, frame):
+    raise _InstanceTimeout()
+
+
 def get_ground_truth(
     map_dims: dict,
     agents: list,
     goals: list,
     config_str: str | None = None,
     cbs_node_budget: int | None = 50_000,
+    instance_timeout: float = 0.0,
 ) -> tuple[np.ndarray, int] | None:
     """
     Run RobustMCPF in BasicMAPF mode and extract the optimal assignment matrix Y.
@@ -33,13 +43,28 @@ def get_ground_truth(
     BFS-reachable yet so constraint-heavy that CBS never terminates.  Budget
     exhaustion rejects the instance (same as unreachable goals).
 
-    Returns (Y, total_cost) on success, or None if the solver fails / raises.
+    instance_timeout (seconds, 0 = disabled) is a wall-clock safety net on top
+    of cbs_node_budget: at N/M scale (~100+), individual CBS node expansions
+    get slow enough that 50k of them can take minutes even though the budget
+    itself is "reached" — the node count alone doesn't bound wall time. Mirrors
+    evaluation/full_pipeline_eval.py's --instance_timeout SIGALRM pattern.
+
+    Returns (Y, total_cost) on success, or None if the solver fails / raises /
+    times out.
     """
+    old_handler = None
+    if instance_timeout > 0:
+        old_handler = signal.signal(signal.SIGALRM, _raise_timeout)
+        signal.alarm(int(instance_timeout))
     try:
         result = run_basic_mapf(map_dims, agents, goals, config_str=config_str,
                                 cbs_node_budget=cbs_node_budget)
-    except Exception:
+    except (Exception, _InstanceTimeout):
         return None
+    finally:
+        if instance_timeout > 0:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
     if result is None:
         return None
 
