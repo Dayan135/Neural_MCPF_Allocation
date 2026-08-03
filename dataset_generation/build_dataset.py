@@ -92,8 +92,26 @@ def _try_one_sample(task):
 _SPLIT_OFFSET = {"train": 0, "val": 1, "test": 2}
 
 
-def _split_rng(base_seed: int, split: str) -> np.random.Generator:
-    return np.random.default_rng([base_seed, _SPLIT_OFFSET[split]])
+def _split_rng(base_seed: int, split: str, resume_offset: int = 0) -> np.random.Generator:
+    # resume_offset shifts the stream on a resumed run so it doesn't just
+    # replay (and re-solve) the same instances that already succeeded.
+    return np.random.default_rng([base_seed, _SPLIT_OFFSET[split], resume_offset])
+
+
+def _load_existing(save_dir: str) -> tuple[list, list, list]:
+    """Load a prior (possibly partial) save for this split, if one exists —
+    lets a re-submitted job resume instead of re-solving already-done instances."""
+    paths = [os.path.join(save_dir, f"{name}.npy") for name in ("D_matrices", "G_matrices", "Y_matrices")]
+    if not all(os.path.exists(p) for p in paths):
+        return [], [], []
+    D, G, Y = (np.load(p) for p in paths)
+    return list(D), list(G), list(Y)
+
+
+def _save_checkpoint(save_dir: str, D_list: list, G_list: list, Y_list: list) -> None:
+    np.save(os.path.join(save_dir, "D_matrices.npy"), np.array(D_list, dtype=np.float32))
+    np.save(os.path.join(save_dir, "G_matrices.npy"), np.array(G_list, dtype=np.float32))
+    np.save(os.path.join(save_dir, "Y_matrices.npy"), np.array(Y_list, dtype=np.float32))
 
 
 def generate_split(
@@ -121,8 +139,16 @@ def generate_split(
     if fixed_map is not None:
         grid_w, grid_h = fixed_map["Cols"], fixed_map["Rows"]
 
-    rng = _split_rng(base_seed, split)
-    D_list, G_list, Y_list = [], [], []
+    D_list, G_list, Y_list = _load_existing(save_dir)
+    resume_offset = len(D_list)
+    if resume_offset >= num_samples:
+        print(f"{save_dir}/ already has {resume_offset} >= {num_samples} samples, skipping")
+        return
+    if resume_offset:
+        print(f"Resuming {save_dir}/: {resume_offset} samples already saved, "
+              f"generating {num_samples - resume_offset} more")
+
+    rng = _split_rng(base_seed, split, resume_offset)
     attempts = 0
 
     def _next_tasks(n):
@@ -133,13 +159,13 @@ def generate_split(
             w = int(rng.integers(grid_w, grid_w_max + 1)) if grid_w_max is not None else grid_w
             h = int(rng.integers(grid_h, grid_h_max + 1)) if grid_h_max is not None else grid_h
             p = float(rng.uniform(obstacle_prob, obstacle_prob_max)) if obstacle_prob_max is not None else obstacle_prob
-            config_str = f"{split}_{attempts}"
+            config_str = f"{split}_{resume_offset}_{attempts}"
             tasks.append((w, h, num_agents, num_goals, p, seed, config_str,
                          fixed_map, instance_timeout))
             attempts += 1
         return tasks
 
-    with tqdm(total=num_samples, desc=f"Generating {split}") as pbar:
+    with tqdm(total=num_samples, initial=resume_offset, desc=f"Generating {split}") as pbar:
         if num_workers <= 1:
             while len(D_list) < num_samples:
                 for task in _next_tasks(_CHUNK):
@@ -151,6 +177,7 @@ def generate_split(
                         G_list.append(result[1])
                         Y_list.append(result[2])
                         pbar.update(1)
+                _save_checkpoint(save_dir, D_list, G_list, Y_list)
         else:
             with multiprocessing.Pool(num_workers) as pool:
                 while len(D_list) < num_samples:
@@ -161,11 +188,11 @@ def generate_split(
                             G_list.append(result[1])
                             Y_list.append(result[2])
                             pbar.update(1)
+                    _save_checkpoint(save_dir, D_list, G_list, Y_list)
 
-    np.save(os.path.join(save_dir, "D_matrices.npy"), np.array(D_list, dtype=np.float32))
-    np.save(os.path.join(save_dir, "G_matrices.npy"), np.array(G_list, dtype=np.float32))
-    np.save(os.path.join(save_dir, "Y_matrices.npy"), np.array(Y_list, dtype=np.float32))
-    print(f"Saved {num_samples} samples to {save_dir}/ ({attempts} attempts total)")
+    _save_checkpoint(save_dir, D_list, G_list, Y_list)
+    print(f"Saved {len(D_list)} samples to {save_dir}/ ({resume_offset} resumed + "
+          f"{attempts} new attempts)")
 
 
 def main() -> None:
