@@ -52,19 +52,24 @@ def get_ground_truth(
     Returns (Y, total_cost) on success, or None if the solver fails / raises /
     times out.
     """
-    old_handler = None
-    if instance_timeout > 0:
-        old_handler = signal.signal(signal.SIGALRM, _raise_timeout)
-        signal.alarm(int(instance_timeout))
     try:
-        result = run_basic_mapf(map_dims, agents, goals, config_str=config_str,
-                                cbs_node_budget=cbs_node_budget)
-    except (Exception, _InstanceTimeout):
-        return None
-    finally:
+        old_handler = None
         if instance_timeout > 0:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
+            old_handler = signal.signal(signal.SIGALRM, _raise_timeout)
+            signal.alarm(int(instance_timeout))
+        try:
+            result = run_basic_mapf(map_dims, agents, goals, config_str=config_str,
+                                    cbs_node_budget=cbs_node_budget)
+        finally:
+            if instance_timeout > 0:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+    except (Exception, _InstanceTimeout):
+        # Also catches the race where SIGALRM fires during the finally's own
+        # alarm(0) call, right as run_basic_mapf finishes — that raised
+        # _InstanceTimeout previously escaped uncaught (it's outside the inner
+        # try) and crashed the whole worker process, killing the Slurm task.
+        return None
     if result is None:
         return None
 

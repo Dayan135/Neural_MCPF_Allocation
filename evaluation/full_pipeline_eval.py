@@ -276,58 +276,63 @@ def main():
         if args.instance_timeout:
             signal.alarm(int(args.instance_timeout))
         try:
-            # --- NN allocation (+ goal ordering) ---
-            t0 = time.perf_counter()
-            D_norm = normalize_D(D_raw, inst_w, inst_h)
-            D_t = torch.from_numpy(D_norm).float()[None].to(device)
-            G_t = None
-            if use_goal_dists:
-                G_norm = normalize_D(G_raw, inst_w, inst_h)
-                G_t = torch.from_numpy(G_norm).float()[None].to(device)
-            with torch.no_grad():
-                P = (model(D_t, G=G_t) if G_t is not None else model(D_t))[0].cpu().numpy()
-            alloc_ms = (time.perf_counter() - t0) * 1000.0
+            try:
+                # --- NN allocation (+ goal ordering) ---
+                t0 = time.perf_counter()
+                D_norm = normalize_D(D_raw, inst_w, inst_h)
+                D_t = torch.from_numpy(D_norm).float()[None].to(device)
+                G_t = None
+                if use_goal_dists:
+                    G_norm = normalize_D(G_raw, inst_w, inst_h)
+                    G_t = torch.from_numpy(G_norm).float()[None].to(device)
+                with torch.no_grad():
+                    P = (model(D_t, G=G_t) if G_t is not None else model(D_t))[0].cpu().numpy()
+                alloc_ms = (time.perf_counter() - t0) * 1000.0
 
-            # --- NN path planning with probability-ranked fallbacks ---
-            # If the top allocation admits no collision-free plan, try the next
-            # candidates in decreasing joint probability — the NN-side analogue
-            # of the solver's k=2,3,… LKH escape.
-            nn_result = None
-            fallbacks_used = 0
-            t0 = time.perf_counter()
-            for cand_idx, Y_pred in enumerate(kbest_allocations(P, args.max_fallbacks)):
-                ordered_allocation = {}
-                for agent_idx in range(args.num_agents):
-                    assigned = list(np.where(Y_pred[agent_idx] > 0.5)[0])
-                    order = order_goals(agent_idx, assigned, D_raw, G_raw)
-                    ordered_allocation[agent_idx] = [goals[g] for g in order]
-                nn_result = run_basic_mapf_with_allocation(
-                    map_dims, agents, goals, ordered_allocation,
-                    config_str=f"fp_{run_tag}_nn_{n_done}_{cand_idx}",
+                # --- NN path planning with probability-ranked fallbacks ---
+                # If the top allocation admits no collision-free plan, try the next
+                # candidates in decreasing joint probability — the NN-side analogue
+                # of the solver's k=2,3,… LKH escape.
+                nn_result = None
+                fallbacks_used = 0
+                t0 = time.perf_counter()
+                for cand_idx, Y_pred in enumerate(kbest_allocations(P, args.max_fallbacks)):
+                    ordered_allocation = {}
+                    for agent_idx in range(args.num_agents):
+                        assigned = list(np.where(Y_pred[agent_idx] > 0.5)[0])
+                        order = order_goals(agent_idx, assigned, D_raw, G_raw)
+                        ordered_allocation[agent_idx] = [goals[g] for g in order]
+                    nn_result = run_basic_mapf_with_allocation(
+                        map_dims, agents, goals, ordered_allocation,
+                        config_str=f"fp_{run_tag}_nn_{n_done}_{cand_idx}",
+                    )
+                    if nn_result is not None:
+                        fallbacks_used = cand_idx
+                        break
+                nn_plan_ms = (time.perf_counter() - t0) * 1000.0
+
+                if nn_result is None:
+                    n_infeasible += 1
+                    n_done += 1
+                    continue
+
+                # --- Full solver (LKH + CBS) ---
+                t0 = time.perf_counter()
+                solver_result = run_basic_mapf(
+                    map_dims, agents, goals, config_str=f"fp_{run_tag}_sv_{n_done}",
+                    cbs_node_budget=args.solver_node_budget,
                 )
-                if nn_result is not None:
-                    fallbacks_used = cand_idx
-                    break
-            nn_plan_ms = (time.perf_counter() - t0) * 1000.0
-
-            if nn_result is None:
-                n_infeasible += 1
-                n_done += 1
-                continue
-
-            # --- Full solver (LKH + CBS) ---
-            t0 = time.perf_counter()
-            solver_result = run_basic_mapf(
-                map_dims, agents, goals, config_str=f"fp_{run_tag}_sv_{n_done}",
-                cbs_node_budget=args.solver_node_budget,
-            )
-            solver_ms = (time.perf_counter() - t0) * 1000.0
+                solver_ms = (time.perf_counter() - t0) * 1000.0
+            finally:
+                if args.instance_timeout:
+                    signal.alarm(0)
         except InstanceTimeout:
+            # Also catches the race where SIGALRM fires during the finally's own
+            # alarm(0) call, right as the solver call finishes — that raised
+            # InstanceTimeout previously escaped uncaught (outside the inner
+            # try) and crashed the whole eval run.
             n_timeout += 1
             continue
-        finally:
-            if args.instance_timeout:
-                signal.alarm(0)
 
         # Solver couldn't finish within budget — degenerate instance, no ground
         # truth to compare against, so discard it (don't count toward n_done).
