@@ -13,7 +13,7 @@
 #SBATCH --account=erant
 #SBATCH --qos=normal
 #SBATCH --time=12:00:00
-#SBATCH --gres=gpu:rtx_3090:1
+#SBATCH --gres=gpu:rtx_6000:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --output=/home/dayanb/course_multiagent/Neural_MCPF_Allocation/logs/tierB_room_%A_%a.out
