@@ -12,7 +12,7 @@
 #SBATCH --partition=gpu
 #SBATCH --account=erant
 #SBATCH --qos=normal
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --gres=gpu:rtx_6000:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
@@ -49,7 +49,7 @@ python train.py \
     --hidden 128 --num_layers 6 --num_heads 4 \
     --use_goal_dists \
     --lr 5e-4 --grad_clip 1.0 \
-    --epochs 50 --batch_size 8 \
+    --epochs 50 --batch_size 4 \
     --lam 0.1 \
     --seed "$SEED" \
     --run_name "tierA_maze_s${SEED}"
