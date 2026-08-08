@@ -49,7 +49,7 @@ python train.py \
     --hidden 128 --num_layers 6 --num_heads 4 \
     --use_goal_dists \
     --lr 5e-4 --grad_clip 1.0 \
-    --epochs 50 --batch_size 32 \
+    --epochs 50 --batch_size 8 \
     --lam 0.1 \
     --seed "$SEED" \
     --run_name "tierA_random_s${SEED}"
