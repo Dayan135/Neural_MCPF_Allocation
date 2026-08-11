@@ -110,13 +110,18 @@ class _RowColBlock(nn.Module):
         B, N, M, d = E.shape
 
         # Row attention: each agent attends over M goal embeddings
+        # need_weights=False: weights are discarded anyway, and this lets
+        # PyTorch use its memory-efficient/flash-attention fast path instead
+        # of materializing the full (batch, heads, seq, seq) score tensor -
+        # that materialized tensor is what was driving CUDA OOM at large N/M
+        # (batch here is B*N or B*M, so it blows up fast).
         Er = E.view(B * N, M, d)
-        attn_out, _ = self.row_attn(Er, Er, Er)
+        attn_out, _ = self.row_attn(Er, Er, Er, need_weights=False)
         E = E + self.norm1(attn_out.view(B, N, M, d))
 
         # Column attention: each goal attends over N agent embeddings
         Ec = E.permute(0, 2, 1, 3).reshape(B * M, N, d)
-        attn_out, _ = self.col_attn(Ec, Ec, Ec)
+        attn_out, _ = self.col_attn(Ec, Ec, Ec, need_weights=False)
         E = E + self.norm2(attn_out.view(B, M, N, d).permute(0, 2, 1, 3))
 
         # FFN
