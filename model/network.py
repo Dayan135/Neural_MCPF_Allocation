@@ -260,8 +260,12 @@ class GoalAllocTransformerUniversal(nn.Module):
         E = self.input_proj(D.unsqueeze(-1))  # (B, N, M, d)
 
         if self.g_scalar_proj is not None and G is not None:
-            # G: (B, M, M) — for each goal j embed every G[b,j,k] and sum over k
-            goal_ctx = self.g_scalar_proj(G.unsqueeze(-1)).sum(dim=2)  # (B, M, d)
+            # G: (B, M, M) — for each goal j embed every G[b,j,k] and average over k.
+            # mean, not sum: a sum's magnitude grows with M (unbounded across
+            # scales this model must generalize to), which overflowed to nan at
+            # Tier A's M up to 350 (survived fine through M<=150) - mean keeps
+            # the context vector's magnitude invariant to M.
+            goal_ctx = self.g_scalar_proj(G.unsqueeze(-1)).mean(dim=2)  # (B, M, d)
             E = E + goal_ctx[:, None, :, :]  # broadcast → (B, N, M, d)
 
         for block in self.blocks:
