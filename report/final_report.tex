@@ -101,15 +101,17 @@
 \noindent\small
 Multi-agent path finding with multiple goals requires deciding which agent visits which goals
 before any path can be planned. This allocation sub-problem is a multi-agent traveling salesman
-problem, and it is the combinatorial part of an otherwise tractable pipeline. The exact RobustMCPF
-solver handles it with an LKH TSP call, then passes a fixed allocation to conflict-based search
-(CBS) for collision-free planning. We replace only the allocation step with a learned,
-size-agnostic transformer. It reads two shortest-path distance matrices, one from agents to goals
-and one between goals, and outputs a distribution over agents for each goal. Since CBS is shared by
-both pipelines, any difference in the final plan comes from the allocator alone, and a single set
-of weights serves any problem size from $2\times2$ to $50\times100$. Across 28 configurations the
-learned allocator stays within 1--6\% of the exact solver's true execution cost and produces no
-infeasible allocations. At paper scale it runs 5.9--9.4$\times$ faster while remaining within
+problem, and it is the stage that limits how far the solver can scale. The exact RobustMCPF solver
+handles it with an LKH TSP call, then passes a fixed allocation to conflict-based search (CBS) for
+collision-free planning, a stage that is comparatively well behaved. We replace only the allocation
+step with a learned transformer that is size-agnostic: a single set of weights handles any number of
+agents and goals. It reads two shortest-path distance matrices, one from agents to goals and one
+between goals, and outputs a distribution over agents for each goal. Since CBS is shared by both
+pipelines, any difference in the final plan comes from the allocator alone. We evaluate it at
+problem sizes from $2\times2$ up to $50\times100$. Across 28 configurations the collision-free plans
+it produces are on average 2\% longer than the solver's optimal plans and at worst 5\% longer, and
+every allocation it proposed could be planned without collisions. At paper scale it runs
+5.9--9.4$\times$ faster while remaining within
 roughly 20\% of optimal. We then ask whether map-specialized allocators beat a single generalist.
 Five models, one trained on all four benchmark maps and four trained on a single map each, are
 compared on solution quality and wall-time to determine whether map-aware routing is worthwhile.
@@ -139,9 +141,9 @@ combinatorial in the number of agents and goals, and it is the stage that degrad
 problems grow.
 
 This work replaces that stage, and only that stage, with a neural network that reads two
-breadth-first-search distance matrices: $D$ from agents to goals, and $G$ between goals. The
-downstream ordering and CBS steps are left untouched, so both pipelines end in the same planner and
-any difference between them can be attributed to the allocator. The trade is exactness for speed.
+breadth-first-search distance matrices: $D$ from agents to goals, and $G$ between goals. Both
+pipelines then plan collision-free paths with the same CBS implementation, so the comparison stays
+close to like-for-like. The trade is exactness for speed.
 A network trained by imitation will not always reproduce the optimum, and the question this report
 answers is when accepting that is worthwhile.
 
@@ -153,7 +155,7 @@ answers is when accepting that is worthwhile.
         disagreements with the solver are cost-equivalent ties (Section~\ref{sec:setup}).
   \item A design study isolating input representation as the dominant factor, worth more than
         architecture, capacity and data scale combined (Section~\ref{sec:design}).
-  \item A characterization of what transfers: map geometry does, problem scale does not
+  \item A characterization of what transfers: map geometry largely does, problem scale does not
         (Section~\ref{sec:design}).
   \item A scale-limit and specialist-versus-generalist study producing a concrete map-routing
         recommendation (Section~\ref{sec:final}).
@@ -170,9 +172,11 @@ warehouse or a delivery fleet, allocation is re-solved continuously as orders ar
 finish their tasks, and every re-solve pays the combinatorial cost again. An exact allocator is an
 excellent choice for a single offline instance and a progressively worse one as throughput
 requirements rise. A learned allocator has the opposite profile. Training is expensive and paid
-once, while inference is a forward pass whose cost is close to flat in problem size. What is given
-up is quality, so the report's job is to measure that loss in the currency that matters, namely the
-length of the collision-free plan actually executed, and to identify where the exchange pays off.
+once, while inference is a single forward pass through the network, a fixed sequence of matrix
+multiplications with no search involved, whose cost grows far more slowly than the solver's. What is given
+up is quality. The report measures that loss in the only unit that matters to a user of the system,
+the total number of steps the agents actually walk, counted after collisions have been resolved. It
+then identifies where the exchange pays off.
 
 \subsection{Problem formulation}
 
@@ -186,6 +190,12 @@ That freedom is what makes this an mTSP and not an assignment problem. Figure~\r
 shows the canonical case of two agents near each other and two distant goals. Splitting the goals
 costs 14, while giving both to one agent costs 7. The optimum is unbalanced.
 
+% KNOWN ISSUE, DEFERRED BY DECISION (2026-08-11): the figure labels the bundled tour
+% "cost 7" but with its current coordinates (A1 0,0 / A2 1,0 / G1 3,4 / G2 4,4) the true
+% cost is 8: A1->G1 = 7, G1->G2 = 1. Split (14) is correct.
+% FIX: swap the agents, A1 at (1,0) and A2 at (0,0), in presentation/make_diagrams.py:51.
+% Then A1->G1 = 6, A2->G2 = 8, so split = 14 and bundle = 6+1 = 7, both labels true.
+% We chose not to regenerate the PNG now. Revisit before submission.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.58\textwidth]{bundle_vs_split.png}
@@ -230,10 +240,14 @@ end-to-end and unambiguous.
 
 \subsection{Overview}
 
-Both pipelines share everything except the allocator (Figure~\ref{fig:pipelines}). The solver runs
-LKH followed by CBS. Ours runs a forward pass, then goal-visit ordering, then CBS. Because the
-planner, the instance and the cost measure are identical, the difference between the two output
-plans isolates the allocation decision.
+The solver runs LKH followed by CBS. Ours runs a forward pass through the network, then goal-visit
+ordering, then CBS (Figure~\ref{fig:pipelines}). Both pipelines plan collision-free paths with the
+same CBS implementation. They differ in how the visit order within each agent's goals is obtained:
+LKH returns it as part of its tour, whereas our pipeline computes it separately once the allocation
+is fixed. For up to eight goals per agent the two agree, since our enumeration is exhaustive and
+therefore optimal for a given allocation; Section~\ref{sec:deploy} gives the details. Because the
+instance and the cost measure are identical, the difference between the two output plans isolates
+the allocation decision.
 
 \begin{figure}[htbp]
 \centering
@@ -247,8 +261,10 @@ wall-time can be attributed to the allocator.}
 
 The network never sees the grid. It sees two matrices of BFS shortest-path distances that respect
 walls: $D \in \mathbb{R}^{N \times M}$ from each agent to each goal, and $G \in \mathbb{R}^{M \times
-M}$ between goals (Figure~\ref{fig:dg}). Both are normalized to $[0,1]$ by $(W-1)+(H-1)$, the
-maximum BFS distance on an open $W\times H$ grid.
+M}$ between goals (Figure~\ref{fig:dg}). Both are divided by $(W-1)+(H-1)$, where $W$ and $H$ are the
+grid's width and height in cells. This is the longest shortest path on an open grid of that size,
+so it puts distances from grids of different sizes on a common scale. Walls can force a detour that
+exceeds it, so it is a scale factor and not a strict bound.
 
 Using distances instead of coordinates is a deliberate choice. Tour cost is a function of
 distances, and distances abstract away the map, so the representation transfers across grid sizes
@@ -256,7 +272,7 @@ and geometries. $D$ tells each agent how far each goal is. $G$ carries the infor
 express, which is which goals lie near each other and should therefore be bundled onto one agent.
 Section~\ref{sec:design} shows that $G$ is the single most valuable design decision in the project.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.54\textwidth]{D_G_matrices.png}
 \caption{The two inputs for one instance: agent-to-goal distances $D$ and goal-to-goal distances
@@ -274,10 +290,14 @@ Ours does not, and the mechanism is worth setting out in full (Figure~\ref{fig:a
 by a shared $\mathrm{Linear}(1 \to d)$, producing an $N \times M$ grid of tokens. Because the
 projection is shared, the parameter count does not depend on $N$ or $M$.
 
-\textbf{Goal context.} Each scalar $G_{jk}$ is embedded and the results are summed over $k$, giving
-one context vector per goal $j$ that is added to that goal's column of tokens. The sum-pooling step
-is what matters here: it maps a variable-length set of goal-to-goal distances onto a fixed-width
-vector, so $M$ can be anything.
+\textbf{Goal context.} Goal $j$ has a row of distances to every other goal, $G_{j1}$ through
+$G_{jM}$. Each of those numbers is passed through its own shared $\mathrm{Linear}(1 \to d)$, turning
+it into a $d$-dimensional vector, and the resulting vectors are then added together elementwise to
+give a single $d$-dimensional summary for goal $j$. Embedding before adding matters, because it lets
+the network retain more than one property of the distances, and because the sum of any number of
+$d$-vectors is still a $d$-vector, $M$ can be anything. That summary is added to each of the $N$
+tokens in goal $j$'s column, which are $d$-dimensional as well, so every token concerning goal $j$
+also carries information about how that goal sits relative to the rest.
 
 \textbf{Attention.} Each block applies row attention, in which an agent attends over its own goals
 and learns how they relate to each other, then column attention, in which a goal attends over the
@@ -289,12 +309,19 @@ meaningful ``agent 1''. Leaving out positional embeddings makes the network perm
 in both axes and removes the last size-dependent component, which is why the same weights can
 process a $2\times2$ instance and a $50\times100$ one.
 
+The architecture therefore places no upper bound on $N$ or $M$. The largest instances reported here,
+50 agents and 100 goals, are limited by the exact solver instead: every result is a ratio against its
+output, so the baseline has to finish before a comparison exists at all. Section~\ref{sec:final}
+measures where that ceiling actually falls.
+\TODOin{update the $50\times100$ figure here and in the abstract if the Exp 16 scale sweep pushes past it}
+
 \textbf{Output.} A shared $\mathrm{Linear}(d \to 1)$ reduces each token to a single logit, giving an
 $N\times M$ logit matrix. A softmax down each column yields $P$, where $P_{ij}$ is the probability
 that agent $i$ visits goal $j$ and $\sum_i P_{ij}=1$. This is exactly the structure
 Section~2.2 requires. Taking the arg-max of each column decodes the binary allocation.
 
-\textbf{Mixed-size training.} Instances of different shapes cannot be stacked into one tensor, so a
+\textbf{Mixed-size training.} Instances of different shapes cannot be stacked into one rectangular
+array, which is what a GPU needs in order to process many at once, so a
 \texttt{MixedSizeBatchSampler} builds shape-homogeneous batches. Each batch holds a single $(N,M)$
 while consecutive batches differ, which trains one model jointly across many configurations without
 padding or masking.
@@ -326,6 +353,7 @@ with no tour chaining and no collision term, so the true mTSP objective reaches 
 through the labels $Y$.
 
 \subsection{Data generation and deployment}
+\label{sec:deploy}
 
 Each sample is produced by placing agents and goals on a map, computing $D$ and $G$ by BFS, and
 calling the solver for the optimal $Y$. Instances with unreachable goals are rejected, as are those
@@ -333,8 +361,11 @@ that exceed a CBS node budget of 50k expansions. That second filter addresses a 
 at high wall density, where an instance passes the reachability check but CBS escalates constraints
 without ever terminating.
 
-At deployment the arg-max allocation is decoded, each agent's visit order is fixed by brute-force
-enumeration over its assigned goals, and CBS plans the paths. When an allocation admits no
+At deployment the arg-max allocation is decoded, each agent's visit order is fixed, and CBS plans
+the paths. Ordering is done by exhaustive enumeration: for an agent holding $k$ goals we evaluate
+all $k!$ orderings and keep the cheapest, which is optimal by construction. Beyond eight goals per
+agent the enumeration becomes impractical, so we fall back to nearest-neighbor construction followed
+by 2-opt improvement. When an allocation admits no
 collision-free plan, the next candidate in a probability-ranked chain is tried, taken best-first
 over the joint probability $\prod_j P_{a_j,j}$ up to $k=3$. This is the learned counterpart of the
 solver's $k$-best escape.
@@ -382,7 +413,9 @@ plan an agent would actually execute.
 
 Fifteen experiments preceded the final system. Instead of recounting them chronologically, we
 report the five findings that determined the design, each of which fixes one property described in
-Section~\ref{sec:method}. Table~\ref{tab:decisions} collects the supporting numbers.
+Section~\ref{sec:method}. Table~\ref{tab:decisions} collects the supporting numbers. Throughout this
+section $N$ is the number of agents and $M$ the number of goals, and differences in accuracy are
+quoted in percentage points: a model scoring 0.789 against one scoring 0.772 is ahead by 1.7 points.
 
 \textbf{D1. Attention wins, and increasingly so with scale.} Against an MLP and a DeepSets encoder
 on identical data, the row/column transformer led on every metric, and its margin over the MLP grew
@@ -394,8 +427,9 @@ backbone.
 by 14 to 18 points at every agent count. For comparison, doubling the training set from 10k to 20k
 samples bought $0.4$ points, and every capacity increase we tried bought at most $1.4$, with the
 largest configuration diverging outright. $D$ on its own cannot express the fact that two goals are
-adjacent and should be bundled. $G$ supplies precisely that, and it outweighs architecture, data
-and capacity combined by more than tenfold. This fixes the input.
+adjacent and should be bundled. $G$ supplies precisely that, and it is worth more than architecture,
+data and capacity put together: about four times as much at $N{=}2$ and roughly twice as much at
+$N{=}5$. This fixes the input.
 
 \textbf{D3. One size-agnostic model beats a family of specialists.} A universal model trained
 jointly across fifteen $(N,M)$ configurations matched or beat the per-size specialists on all but
@@ -611,9 +645,13 @@ contractually required, an approximate allocator is inadmissible whatever its sp
 structured maps the network has to have trained on that structure, so an unseen structured
 environment is a poor fit.
 
-\textbf{Limitations.} Goal-visit ordering is still brute-force over each agent's assigned goals,
-which is $O(k!)$ and becomes the pipeline bottleneck at seven or eight goals per agent. The
-allocation itself is sub-millisecond, but the classical step around it is not. CBS execution cost is
+\textbf{Limitations.} Goal-visit ordering is a separate classical step in our pipeline. Exhaustive
+enumeration is optimal but costs $O(k!)$, and it becomes the pipeline bottleneck at seven or eight
+goals per agent, where the allocation itself is sub-millisecond but the step around it is not.
+Beyond eight goals we fall back to nearest-neighbor with 2-opt, which is fast but no longer
+guaranteed optimal. At that point some of the gap to the solver comes from our ordering instead of
+our allocation, so the attribution is no longer clean, and a learned ordering head would remove both
+problems at once. CBS execution cost is
 not differentiable, so training optimizes an imitation proxy and not the objective actually being
 measured. Imitation also caps quality at the teacher's level, meaning the network can match the exact
 solver but never beat it. Finally, the evaluation rests on one $32\times32$ benchmark family under
@@ -625,7 +663,7 @@ untested.
 % ═════════════════════════════════════════════════════════════════════════════
 
 A compact transformer reading two distance matrices reproduces an exact solver's goal allocation
-closely enough that the resulting collision-free plans cost 1--6\% more than optimal
+closely enough that the resulting collision-free plans cost 2\% more than optimal on average
 in-distribution, with a single set of weights serving any number of agents and goals. The decisive
 design choice turned out to be representation, not architecture or scale, since goal-to-goal
 distances were worth more than every other improvement combined. The model generalizes across map
