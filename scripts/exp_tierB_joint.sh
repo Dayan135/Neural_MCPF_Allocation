@@ -4,6 +4,13 @@
 # N/M grid: N∈{30,55,80} × M∈{50,100,150} (see scripts/gen_paper_maps_tierB_data.sh).
 # 3 seeds as a Slurm array. Requires a GPU node.
 #
+# --sample_fraction 0.25: pooling all 36 (map,N,M) configs at their full
+# 20k/2k/2k each blew up total data to 864k samples/epoch and OOM'd after
+# ~14min (36-config CPU-side dataset + big epochs). 0.25 caps the joint
+# run to the SAME total sample budget as one per-map run (9 configs x full
+# data), round-robin fair - every config keeps the same fraction, randomly
+# subsampled, reproducible via --seed.
+#
 # Submit after gen_paper_maps_tierB_data.sh completes:
 #   sbatch --dependency=afterok:<gen_job_id> scripts/exp_tierB_joint.sh
 
@@ -45,6 +52,7 @@ cd "$PROJECT/training"
 python train.py \
     --mixed \
     --data_dirs "$DATA_DIRS" \
+    --sample_fraction 0.25 \
     --model_type transformer \
     --hidden 128 --num_layers 6 --num_heads 4 \
     --use_goal_dists \

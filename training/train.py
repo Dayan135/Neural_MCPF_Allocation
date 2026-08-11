@@ -72,7 +72,16 @@ class MixedAllocationDataset(Dataset):
     MixedSizeBatchSampler can build shape-homogeneous batches.
     """
 
-    def __init__(self, data_dirs: list[str], split: str):
+    def __init__(self, data_dirs: list[str], split: str,
+                 sample_fraction: float = 1.0, seed: int = 0):
+        """
+        sample_fraction < 1.0 randomly subsamples each config down to that
+        fraction of its native size — round-robin fair (every config
+        contributes the same fraction, so no config dominates the pool) and
+        reproducible (per-config RNG derived from `seed`). Used to cap joint
+        (all-configs-pooled) training to a comparable total sample budget as
+        a single per-map run, instead of the full N-configs-worth of data.
+        """
         self.samples: list[tuple] = []
         self.config_indices: dict[tuple[int, int], list[int]] = {}
 
@@ -87,6 +96,11 @@ class MixedAllocationDataset(Dataset):
             Y = torch.from_numpy(
                 np.load(os.path.join(split_dir, "Y_matrices.npy"))
             ).float()
+            if sample_fraction < 1.0:
+                rng = np.random.default_rng([seed, hash(d) & 0xFFFFFFFF])
+                n_keep = max(1, round(len(D) * sample_fraction))
+                keep = rng.choice(len(D), size=n_keep, replace=False)
+                D, G, Y = D[keep], G[keep], Y[keep]
             N, M = D.shape[1], D.shape[2]
             key = (N, M)
             start = len(self.samples)
@@ -198,6 +212,12 @@ def main():
                         help="train on multiple (N,M) configs with GoalAllocTransformerUniversal")
     parser.add_argument("--data_dirs", type=str, default=None,
                         help="comma-separated data dirs for --mixed mode")
+    parser.add_argument("--sample_fraction", type=float, default=1.0,
+                        help="--mixed only: randomly subsample each config to this fraction "
+                             "of its native size (round-robin fair - every config keeps the "
+                             "same fraction), reproducible via --seed. Use to cap a joint "
+                             "(many-configs-pooled) run to a comparable total sample budget "
+                             "as a single per-map run instead of the full N-configs-worth.")
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -227,8 +247,10 @@ def main():
             f"Device: {device}  |  model=transformer(universal)  "
             f"configs={len(data_dirs)}  hidden={args.hidden}  lam={args.lam}"
         )
-        train_ds = MixedAllocationDataset(data_dirs, "train")
-        val_ds = MixedAllocationDataset(data_dirs, "val")
+        train_ds = MixedAllocationDataset(data_dirs, "train",
+                                          sample_fraction=args.sample_fraction, seed=args.seed)
+        val_ds = MixedAllocationDataset(data_dirs, "val",
+                                        sample_fraction=args.sample_fraction, seed=args.seed)
         train_loader = DataLoader(
             train_ds,
             batch_sampler=MixedSizeBatchSampler(train_ds, args.batch_size, shuffle=True),

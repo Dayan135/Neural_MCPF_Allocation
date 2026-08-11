@@ -4,6 +4,12 @@
 # N/M grid: N∈{60,120,180} × M∈{100,225,350} (see scripts/gen_paper_maps_tierA_data.sh).
 # 3 seeds as a Slurm array. Requires a GPU node.
 #
+# --sample_fraction 0.25: caps the joint run to the SAME total sample
+# budget as one per-map run (9 configs x full data vs 36 configs x 25%),
+# round-robin fair across configs and reproducible via --seed. Also keeps
+# per-epoch cost comparable to per-map so the joint-vs-per-map comparison
+# is apples-to-apples, not confounded by joint simply seeing 4x more data.
+#
 # Submit after gen_paper_maps_tierA_data.sh completes:
 #   sbatch --dependency=afterok:<gen_job_id> scripts/exp_tierA_joint.sh
 
@@ -45,6 +51,7 @@ cd "$PROJECT/training"
 python train.py \
     --mixed \
     --data_dirs "$DATA_DIRS" \
+    --sample_fraction 0.25 \
     --model_type transformer \
     --hidden 128 --num_layers 6 --num_heads 4 \
     --use_goal_dists \
