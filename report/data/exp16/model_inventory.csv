@@ -1,0 +1,6 @@
+model_id,role,train_maps,dataset,N_range,M_range,n_configs,samples_per_config,total_samples,hidden,layers,params,epochs,lr,batch_size,grad_clip,seeds,best_val_loss,best_val_pergoal_acc,best_epoch,train_wall_hours,gpu,seed_evaluated
+tierA_joint,generalist,"empty-32-32,random-32-32-20,maze-32-32-2,room-32-32-4",B,60-180,100-350,36,4000,144000,128,6,~1.19M,50,5e-4,4,1.0,"0,1,2",,,,,rtx_6000,0
+tierA_empty,specialist,empty-32-32,B,60-180,100-350,9,4000,36000,128,6,~1.19M,50,5e-4,4,1.0,"0,1,2",,,,,rtx_6000,0
+tierA_random,specialist,random-32-32-20,B,60-180,100-350,9,4000,36000,128,6,~1.19M,50,5e-4,4,1.0,"0,1,2",,,,,rtx_6000,0
+tierA_maze,specialist,maze-32-32-2,B,60-180,100-350,9,4000,36000,128,6,~1.19M,50,5e-4,4,1.0,"0,1,2",,,,,rtx_6000,0
+tierA_room,specialist,room-32-32-4,B,60-180,100-350,9,4000,36000,128,6,~1.19M,50,5e-4,4,1.0,"0,1,2",,,,,rtx_6000,0

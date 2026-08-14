@@ -21,6 +21,7 @@
 \usepackage{colortbl}
 \usepackage{booktabs}
 \usepackage{tabularx}
+\usepackage{longtable}
 \usepackage{float}
 \usepackage{enumitem}
 \usepackage{amsmath, amssymb}
@@ -33,7 +34,7 @@
 \usepackage{caption}
 \captionsetup{font=small, skip=4pt}
 
-\graphicspath{{./}{maps/}{oldmodel_large_nm/}{random_vs_fixed/}{real_maps/}{../presentation/assets/}}
+\graphicspath{{./}{maps/}{oldmodel_large_nm/}{random_vs_fixed/}{real_maps/}{tier_closeout/}{../presentation/assets/}}
 
 % ── List / float compaction ──────────────────────────────────────────────────
 \setlist[itemize]{nosep, leftmargin=*, topsep=2pt, partopsep=0pt}
@@ -115,7 +116,9 @@ every allocation it proposed could be planned without collisions. At paper scale
 roughly 20\% of optimal. We then ask whether map-specialized allocators beat a single generalist.
 Five models, one trained on all four benchmark maps and four trained on a single map each, are
 compared on solution quality and wall-time to determine whether map-aware routing is worthwhile.
-\TODOin{closing sentence with the headline result, once Exp 16 lands}
+Pushed further, to $220\times430$ on the four real benchmark maps, the same generalist stays within
+9.6\% of optimal at 6.6--16.1$\times$ speedup.
+\TODOin{closing sentence with the specialist-vs-generalist headline, once dataset A lands}
 \end{abstract}
 
 \vspace{2pt}
@@ -309,11 +312,11 @@ meaningful ``agent 1''. Leaving out positional embeddings makes the network perm
 in both axes and removes the last size-dependent component, which is why the same weights can
 process a $2\times2$ instance and a $50\times100$ one.
 
-The architecture therefore places no upper bound on $N$ or $M$. The largest instances reported here,
-50 agents and 100 goals, are limited by the exact solver instead: every result is a ratio against its
-output, so the baseline has to finish before a comparison exists at all. Section~\ref{sec:final}
-measures where that ceiling actually falls.
-\TODOin{update the $50\times100$ figure here and in the abstract if the Exp 16 scale sweep pushes past it}
+The architecture therefore places no upper bound on $N$ or $M$. The largest instances in the design
+study, 50 agents and 100 goals, are limited by the exact solver instead: every result is a ratio
+against its output, so the baseline has to finish before a comparison exists at all.
+Section~\ref{sec:final} pushes this further, to 220 agents and 430 goals on the real benchmark
+maps, and measures where the ceiling actually falls.
 
 \textbf{Output.} A shared $\mathrm{Linear}(d \to 1)$ reduces each token to a single logit, giving an
 $N\times M$ logit matrix. A softmax down each column yields $P$, where $P_{ij}$ is the probability
@@ -545,12 +548,6 @@ early and then overfitted. The ranking does reverse far out of distribution, whe
 extrapolates better, but dataset~B places the large-instance regime inside the training distribution
 by construction, so the in-distribution verdict is the applicable one.
 
-\begin{TODO}{TEXT --- 1--2 sentences}
-Replace the justification above if the actual reason for restricting to the smaller model differed.
-The text reconstructs the rationale from the earlier h128-vs-h256 comparison; confirm it, or
-substitute the real reasoning.
-\end{TODO}
-
 \textbf{Protocol.} All models see identical instances for a given (map, $N$, $M$) cell, which allows
 paired comparison. The dataset choice for RQ2 is made on validation data, and the
 specialist-versus-generalist comparison for RQ3 is reported on held-out test data, so the selection
@@ -558,22 +555,59 @@ step cannot inflate the final result. The generalist is scored per map and not p
 that, a uniformly mediocre generalist would be indistinguishable from one that is strong on three
 maps and weak on the fourth.
 
-\begin{TODO}{TABLE --- T2, the model inventory}
-Ten rows: model id, role, training map(s), dataset (A/B), $N$ and $M$ ranges, samples per
-configuration and in total, epochs, learning rate, batch size, gradient clipping, seeds, parameter
-count, best validation loss and epoch, training wall-time. Note any model that hit its wall-clock
-limit before finishing its epoch budget, since a wall-limited model must not be presented as a
-converged one. \emph{Source: \texttt{model\_inventory.csv} (data request \S6.6).}
-\end{TODO}
+\begin{table}[htbp]
+\centering
+\caption{Model inventory, dataset-B leg (five roles). Dataset A is still training on the cluster;
+five more rows are added once it finishes.}
+\small
+\begin{tabularx}{\textwidth}{llXcccc}
+\toprule
+Model & Role & Train map(s) & $N$ range & $M$ range & Epochs & Batch \\
+\midrule
+\texttt{tierA\_joint}   & generalist & all four & 60--180 & 100--350 & 50 & 4 \\
+\texttt{tierA\_empty}   & specialist & empty & 60--180 & 100--350 & 50 & 4 \\
+\texttt{tierA\_random}  & specialist & random & 60--180 & 100--350 & 50 & 4 \\
+\texttt{tierA\_maze}    & specialist & maze & 60--180 & 100--350 & 50 & 4 \\
+\texttt{tierA\_room}    & specialist & room & 60--180 & 100--350 & 50 & 4 \\
+\bottomrule
+\end{tabularx}
+\label{tab:modelinv}
+
+\smallskip
+\small\noindent All five share the h128/L6 universal architecture, about 1.19M parameters, the
+same as Exp 12's h128/L6, with lr $5\times10^{-4}$ and gradient clipping 1.0. Three seeds were
+trained per role (0--2); seed 0 is the one evaluated below. Best validation loss, best epoch and
+training wall-time are not shown because only the evaluation CSVs were pulled from the cluster for
+these runs, not the per-epoch training logs. Full columns in
+\texttt{report/data/exp16/model\_inventory.csv}.
+\end{table}
 
 \subsection{Results}
 
-\begin{TODO}{FIGURE + TEXT --- R1, the solver scale wall}
-\emph{Figure:} exact-solver wall-time against problem size, one line per map, horizontal marker at
-60\,s, log scale on time. \emph{Text ($\sim$100 words):} where the wall falls on each map, whether it
-is driven by $N$ or $M$, and the three ceilings stated numerically.
-\emph{Source: \texttt{solver\_scale\_wall.csv} (data request \S3).}
-\end{TODO}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.72\textwidth]{fig_solver_scale_wall.png}
+\caption{Solver wall-time against problem size (local calibration, 3 instances/cell, 180\,s
+safety cap). Solid: median. Dashed: p90. The two diverge sharply on \texttt{random} and
+\texttt{room}, where a minority of instances are far slower than the typical one.}
+\label{fig:scalewall}
+\end{figure}
+
+Figure~\ref{fig:scalewall} does not show a clean wall. Median time grows roughly with $(N,M)$ on
+\texttt{empty} and \texttt{maze}, 2\,s to 52\,s across the swept range, but on \texttt{random} and
+\texttt{room} a minority of individual instances are far slower than the median regardless of
+size: at $N{=}120,M{=}225$ on \texttt{random}, 2 of 3 instances hit the 180\,s safety cap while the
+median at the next point tested, $N{=}180,M{=}350$, drops back to 36\,s. Because the sweep moves
+$N$ and $M$ together rather than independently, we cannot attribute this to one or the other. What
+it does show is that a single pathological instance, not the typical one, is what threatens a
+fixed compute budget. The \textbf{labeling ceiling} is therefore map-dependent and probabilistic
+rather than a fixed $(N,M)$: \texttt{maze} stayed at 0\% timeouts everywhere tested, \texttt{empty}
+hit one 33\% cell, and \texttt{random} and \texttt{room} hit 33--67\% timeout rates at some cells
+and 0\% at larger ones, which is exactly the profile that motivated dataset B's
+500-sample-per-config size and 600\,s per-instance timeout. The \textbf{evaluation ceiling} is at least $N{=}220,M{=}430$: every
+map solved all three instances there, none hit the timeout. We did not observe a size \textbf{beyond}
+which the solver stops returning altogether within this sweep, only rising unpredictability, so
+that third ceiling is not yet reached at 220$\times$430.
 
 \begin{TODO}{TABLE + FIGURE + TEXT --- R2, dataset selection (RQ2)}
 Five head-to-heads, one per role, each between its dataset-A and dataset-B model on a common
@@ -584,22 +618,56 @@ many-small or few-large is the better use of a fixed labeling budget.
 \emph{Source: \texttt{stage1\_dataset\_selection/} (data request \S4).}
 \end{TODO}
 
-\begin{TODO}{TABLE + FIGURE + TEXT --- R3, specialists versus the generalist (RQ3)}
-The five selected models on all four maps. \emph{Table:} per map, specialist and generalist side by
-side on execution-cost ratio, exact match, mean diff, per-goal and full-assignment accuracy, and mean
-wall-time. \emph{Figure:} grouped bars per map, specialist against generalist, on cost ratio and on
-speed. \emph{Text ($\sim$200 words):} whether the specialist advantage is real, whether it is uniform
-across maps or concentrated on the structured ones (the D5 prediction), and whether it holds on
-timing as well as quality. \emph{Source: \texttt{stage2\_expert\_vs\_general/} (data request \S5).}
-\end{TODO}
+\begin{table}[htbp]
+\centering
+\caption{Joint (generalist) versus the native specialist, dataset-B leg, own $N,M$ grid. Speedup is
+mean solver wall-time divided by mean NN pipeline wall-time, same node. $n$ is instances evaluated,
+joint/specialist.}
+\small
+\begin{tabularx}{\textwidth}{lXXXXXXc}
+\toprule
+& \multicolumn{3}{c}{Joint} & \multicolumn{3}{c}{Specialist} & \\
+Map & Ratio & Exact & Speedup & Ratio & Exact & Speedup & $n$ \\
+\midrule
+empty  & 1.071 & 3.6\% & 9.1$\times$  & 1.072 & 2.9\% & 16.5$\times$ & 800/897 \\
+random & 1.074 & 3.6\% & 8.8$\times$  & 1.067 & 3.1\% & 17.1$\times$ & 893/887 \\
+maze   & 1.057 & 4.0\% & 12.1$\times$ & 1.057 & 3.0\% & 13.2$\times$ & 899/898 \\
+room   & 1.069 & 3.9\% & 10.7$\times$ & 1.066 & 3.8\% & 9.2$\times$  & 786/789 \\
+\bottomrule
+\end{tabularx}
+\label{tab:stage2diag}
+\end{table}
 
-\begin{TODO}{TABLE + TEXT --- R4, the cost of misrouting}
-The full $5\times4$ matrix of every model on every map. The diagonal answers whether specialists are
-better, and the off-diagonal answers what it costs when a router picks wrong.
-\emph{Text ($\sim$120 words):} expected gain under a perfect router, the misrouting penalty, and
-therefore how confident map identification has to be for routing to pay.
-\emph{Source: \texttt{stage2\_expert\_vs\_general/} off-diagonal cells.}
-\end{TODO}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.62\textwidth]{fig_tierA_5x4_heatmap.png}
+\caption{Full $5\times4$ matrix, dataset-B leg: every model (rows) on every map (columns), execution-cost
+ratio, own $N,M$ grid. Asterisked cells are a specialist on its own map. A heatmap is used in place
+of grouped bars to keep all 20 cells, diagonal and off-diagonal, legible in one figure.}
+\label{fig:tierA54}
+\end{figure}
+
+Table~\ref{tab:stage2diag} compares the joint model against each map's native specialist. The two
+are close everywhere. The largest gap is 0.007 on random, 1.074 for joint against 1.067 for the
+specialist, and maze ties to within 0.001. Neither model dominates the other on cost. The
+specialist is faster on three of the four maps, up to 17.1$\times$ on random against 8.8$\times$
+for joint, but joint is faster on room. Exact match falls to single digits everywhere, 2.9\% to
+4.0\%, well below the 44--91\% range reported at smaller scale in Section~\ref{sec:design}. Ties
+in optimal cost become rare as $N$ and $M$ grow, so cost ratio is what still discriminates between
+models at this size.
+
+Figure~\ref{fig:tierA54} shows the full $5\times4$ matrix. The diagonal and the joint row sit in a
+narrow band, 1.057 to 1.074. The off-diagonal does not. Misrouting an instance costs little on
+three of the four maps, empty, random and room all stay under 1.16 when sent to each other's
+specialist, but is expensive on maze, where every non-maze specialist reaches 1.48 to 1.62, a 39 to
+52\% cost penalty over its own in-distribution number. The effect is not only allocation quality.
+Misrouted-to-maze cells also carry far more fallback replanning, mean NN pipeline time 7.2 to
+15.2\,s against 2.0 to 2.8\,s in distribution, so a wrong specialist on maze is both a worse plan
+and a slower one to produce. This matches the maze-specific transfer gap behind D5: what fails to
+transfer across map geometry is maze's corridor structure specifically, whether the source model
+was trained on random grids (D5) or on a different real map, as here. A router only needs to be
+confident about one thing, whether the instance is on maze, for routing to pay off, and getting
+that one bit wrong is where the appeal of routing collapses.
 
 \subsection{Hypotheses}
 
@@ -623,11 +691,15 @@ identical and a forward pass costs the same either way. Any measured difference 
 to the environment rather than the model, and one that survives scrutiny would be worth
 investigating.
 
-\begin{TODO}{TEXT --- $\sim$150 words}
-After the results land, add a short verdict subsection: which hypotheses held, which failed, and what
-the failures imply. Keep the predictions above unchanged, since a refuted prediction that is honestly
-reported is worth more than one quietly edited to match.
-\end{TODO}
+\textbf{Verdict, dataset-B leg.} The RQ3 prediction was half right. We expected the specialist
+advantage to be largest on maze. Instead the two tie everywhere, including maze, 1.057 against
+1.057. The structure-specific effect D5 predicted is real but sits off-diagonal, not on it. It is
+misrouting to maze, not training on maze, that is expensive, which is the more interesting outcome
+we flagged as the alternative. The timing prediction failed outright: specialist and joint are not
+indistinguishable, speedup ranges from 2.3$\times$ for a specialist misrouted to maze to
+17.1$\times$ for a specialist on its own map, and the gap tracks fallback replanning rather than
+the environment. RQ2 cannot be scored yet. Dataset A's training run had not finished when this
+section was written, so the dataset-A-vs-B crossover is still open.
 
 % ═════════════════════════════════════════════════════════════════════════════
 \section{Discussion}
@@ -670,10 +742,14 @@ distances were worth more than every other improvement combined. The model gener
 geometry but not across problem scale, and its speed advantage appears in exactly the regimes where
 the exact solver's does not, at scale and in batch.
 
-\begin{TODO}{TEXT --- 2--3 sentences}
-Add the final study's conclusion: whether map specialists beat the generalist, whether routing is
-justified, and which training distribution proved the better use of a labeling budget.
-\end{TODO}
+On the dataset-B leg, map specialists do not beat the generalist. The two tie on cost everywhere,
+including maze, and the generalist wins on wall-time for one of the four maps. What does justify
+routing is avoiding the alternative failure mode: sending an instance to the wrong specialist costs
+up to 52\% on maze specifically, so a router is worth building only if it can identify the map
+reliably, not to chase a specialist-vs-generalist quality gap that this leg did not find. Which
+training distribution, many regular-size instances or fewer large ones, makes the better use of a
+fixed labeling budget is not yet answered: it needs dataset A, still training on the cluster at the
+time of writing.
 
 \textbf{Future work.} The solver's true tour cost is already computed during data generation and then
 discarded. Storing it would enable a tour-aware loss term
@@ -733,17 +809,18 @@ paragraph; expand it into a standalone section if the grader expects a fuller tr
 \section{Appendix}
 % ═════════════════════════════════════════════════════════════════════════════
 
-\begin{TODO}{TABLE --- full per-configuration results}
-Complete per-configuration tables for the final study: every (model, map, $N$, $M$) cell with cost
-ratio, exact match, mean/max/std diff, infeasible and fallback rates, timings, and $n$. The body
-carries only aggregates and figures. \emph{Source: aggregate files accompanying
-\texttt{stage2\_expert\_vs\_general/}.}
-\end{TODO}
+\subsection*{Full per-configuration results, dataset-B leg}
 
-\begin{TODO}{TABLE --- reproducibility}
-Hyperparameters and seeds for all ten models, cluster node types used for timing, torch version, and
-whether inference ran on CPU or GPU. Timing numbers are uninterpretable without this.
-\end{TODO}
+\input{tierA_fullconfig_table.tex}
+
+\subsection*{Reproducibility, dataset-B leg}
+
+All five models: h128/L6 universal transformer, \texttt{use\_goal\_dists} enabled, lr
+$5\times10^{-4}$, gradient clip 1.0, batch size 4, 50-epoch budget, 3 seeds trained (0--2), seed 0
+evaluated. Training ran on the cluster's \texttt{gpu} partition, \texttt{rtx\_6000} GPUs. Evaluation
+(\texttt{full\_pipeline\_eval.py}, both the NN pipeline and the solver baseline) ran on the
+\texttt{cpu} partition, same node per cell. Torch version and exact Slurm job identifiers were not
+recorded on the machine this report is written on and are not yet available.
 
 \begin{TODO}{FIGURE --- optional, training convergence}
 Train and validation loss and per-goal accuracy against epoch for the ten models, with the
@@ -753,9 +830,14 @@ best-validation checkpointing acted as implicit early stopping.
 \emph{Source: \texttt{train\_logs/} (data request \S6.5).}
 \end{TODO}
 
-\begin{TODO}{TEXT --- raw data pointers}
-Record where the per-instance CSVs live (\texttt{report/data/exp16/}), the column schema, and the
-cluster job identifiers, matching the convention used for earlier experiments.
-\end{TODO}
+\subsection*{Raw data}
+
+Per-instance CSVs, aggregates and the model inventory live under \texttt{report/data/exp16/},
+tracked in the repository (unlike \texttt{results/}, which is git-ignored). Per-instance columns:
+\texttt{inst\_seed, cost\_nn, cost\_solver, nn\_k, solver\_k, conflicts\_nn, conflicts\_solver,
+alloc\_ms, nn\_plan\_ms, solver\_ms}, written by \texttt{evaluation/full\_pipeline\_eval.py}.
+\texttt{report/data/exp16/manifest.md} documents the Tier A/dataset-B naming, what is and is not
+included, and the open items: dataset A, offline accuracy, training logs, and cluster job
+identifiers.
 
 \end{document}

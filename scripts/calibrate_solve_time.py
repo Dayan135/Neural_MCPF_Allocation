@@ -91,41 +91,58 @@ def main():
     time_one_solve(warm_map, 2, 2, args.seed, args.cbs_node_budget, args.timeout,
                     f"calib_warm_{os.getpid()}")
 
-    rows = []
-    for map_file in args.maps:
-        map_dims = load_map_file(map_file)
-        map_name = map_file.replace(".map", "")
-        for (N, M) in pairs:
-            times, n_fail, n_timeout = [], 0, 0
-            for i in range(args.n_instances):
-                config_str = f"calib_{map_name}_{N}_{M}_{i}_{os.getpid()}"
-                elapsed, ok, timed_out = time_one_solve(
-                    map_dims, N, M, args.seed + i, args.cbs_node_budget, args.timeout, config_str)
-                times.append(elapsed)
-                if timed_out:
-                    n_timeout += 1
-                elif not ok:
-                    n_fail += 1
-            mean_t = statistics.mean(times)
-            median_t = statistics.median(times)
-            max_t = max(times)
-            print(f"{map_name:20s} N={N:3d} M={M:3d}  mean={mean_t:7.2f}s  "
-                  f"median={median_t:7.2f}s  max={max_t:7.2f}s  "
-                  f"fail={n_fail}/{args.n_instances}  timeout={n_timeout}/{args.n_instances}")
-            rows.append({
-                "map": map_name, "N": N, "M": M,
-                "mean_s": round(mean_t, 3), "median_s": round(median_t, 3),
-                "max_s": round(max_t, 3), "n_instances": args.n_instances,
-                "n_fail": n_fail, "n_timeout": n_timeout,
-            })
-
+    fieldnames = ["map", "N", "M", "mean_s", "median_s", "p90_s", "max_s",
+                  "n_instances", "n_fail", "n_timeout"]
+    out_f, writer = None, None
     if args.out:
-        os.makedirs(os.path.dirname(args.out), exist_ok=True) if os.path.dirname(args.out) else None
-        with open(args.out, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-            writer.writeheader()
-            writer.writerows(rows)
-        print(f"\nWrote {len(rows)} rows to {args.out}")
+        if os.path.dirname(args.out):
+            os.makedirs(os.path.dirname(args.out), exist_ok=True)
+        out_f = open(args.out, "w", newline="")
+        writer = csv.DictWriter(out_f, fieldnames=fieldnames)
+        writer.writeheader()
+        out_f.flush()
+
+    n_rows = 0
+    try:
+        for map_file in args.maps:
+            map_dims = load_map_file(map_file)
+            map_name = map_file.replace(".map", "")
+            for (N, M) in pairs:
+                times, n_fail, n_timeout = [], 0, 0
+                for i in range(args.n_instances):
+                    config_str = f"calib_{map_name}_{N}_{M}_{i}_{os.getpid()}"
+                    elapsed, ok, timed_out = time_one_solve(
+                        map_dims, N, M, args.seed + i, args.cbs_node_budget, args.timeout, config_str)
+                    times.append(elapsed)
+                    if timed_out:
+                        n_timeout += 1
+                    elif not ok:
+                        n_fail += 1
+                mean_t = statistics.mean(times)
+                median_t = statistics.median(times)
+                max_t = max(times)
+                sorted_t = sorted(times)
+                p90_t = sorted_t[max(0, int(round(0.9 * (len(sorted_t) - 1))))]
+                print(f"{map_name:20s} N={N:3d} M={M:3d}  mean={mean_t:7.2f}s  "
+                      f"median={median_t:7.2f}s  p90={p90_t:7.2f}s  max={max_t:7.2f}s  "
+                      f"fail={n_fail}/{args.n_instances}  timeout={n_timeout}/{args.n_instances}")
+                row = {
+                    "map": map_name, "N": N, "M": M,
+                    "mean_s": round(mean_t, 3), "median_s": round(median_t, 3),
+                    "p90_s": round(p90_t, 3), "max_s": round(max_t, 3),
+                    "n_instances": args.n_instances,
+                    "n_fail": n_fail, "n_timeout": n_timeout,
+                }
+                n_rows += 1
+                if writer:
+                    # Flushed per row so a killed/long-running sweep keeps whatever
+                    # cells finished instead of losing the whole run.
+                    writer.writerow(row)
+                    out_f.flush()
+    finally:
+        if out_f:
+            out_f.close()
+            print(f"\nWrote {n_rows} rows to {args.out}")
 
 
 if __name__ == "__main__":

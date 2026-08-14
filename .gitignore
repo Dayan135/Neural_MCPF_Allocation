@@ -12,6 +12,11 @@ logs/
 evaluation/figures/
 results/
 
+# Exception: report/data/exp16/ is a tracked report deliverable (per
+# docs/exp16_data_request.md), not a generated dataset dir like the rest of data/.
+!report/data/
+!report/data/**
+
 # Local CPU venv (eval only)
 .venv/
 
