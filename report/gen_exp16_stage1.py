@@ -1,9 +1,16 @@
 """
 Exp 16 Stage 1 — dataset-A-vs-B head-to-head (RQ2), completing the TODO at
-final_report.tex's R2 block. Reads report/data/exp16/stage1_dataset_selection/{role}_{A,B}/,
-which holds each role's dataset-A (Tier B) and dataset-B (Tier A) checkpoint evaluated on a
-common grid spanning both regimes (Tier B's own small grid + Tier A's own large grid — see
-report/data/exp16/manifest.md for exactly which sweeps feed each quadrant).
+final_report.tex's R2 block.
+
+Each dataset is scored on BOTH regimes (its own native grid and the other dataset's grid), but
+the native-grid cells are never re-delivered here — they're byte-identical to files already
+committed under stage2_expert_vs_general/ (dataset A's own grid = tierB_{role}/; dataset B's own
+grid = tierA_{role}/), so duplicating them under stage1_dataset_selection/ just bloated the repo
+with 354 redundant tracked paths for no new data. stage1_dataset_selection/{role}_{A,B}/ now
+holds only the genuinely new cells: dataset A evaluated on the large grid (Tier B's
+extrapolation target = Tier A's own grid) and dataset B evaluated on the small grid (the new
+eval_tierA_on_tierB_grid.sh sweep run specifically to fill this quadrant). load_cell() below
+picks the right source directory by which grid (n, m) falls in.
 
 Per docs/exp16_data_request.md §4: each role is compared on its own domain (a specialist on its
 own map; the generalist on all 4 maps), selection nominally on validation but only test-time
@@ -24,6 +31,7 @@ import matplotlib.pyplot as plt
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXP16 = os.path.join(ROOT, "report", "data", "exp16")
 STAGE1 = os.path.join(EXP16, "stage1_dataset_selection")
+STAGE2 = os.path.join(EXP16, "stage2_expert_vs_general")
 AGG_OUT = os.path.join(EXP16, "stage1_agg")
 FIG_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tier_closeout")
 os.makedirs(AGG_OUT, exist_ok=True)
@@ -38,10 +46,19 @@ OWN_DOMAIN = {"joint": MAPS, "empty": ["empty-32-32"], "random": ["random-32-32-
 
 SMALL_N, SMALL_M = [30, 55, 80], [50, 100, 150]
 LARGE_N, LARGE_M = [60, 120, 180], [100, 225, 350]
+SMALL_NM = {(n, m) for n in SMALL_N for m in SMALL_M}
+LARGE_NM = {(n, m) for n in LARGE_N for m in LARGE_M}
+# dataset A's native grid is small (Tier B); dataset B's native grid is large (Tier A)
+STAGE2_PREFIX = {"A": "tierB", "B": "tierA"}
+NATIVE_NM = {"A": SMALL_NM, "B": LARGE_NM}
 
 
 def load_cell(role, dataset, map_name, n, m):
-    path = os.path.join(STAGE1, f"{role}_{dataset}", f"{map_name}_n{n}m{m}.csv")
+    if (n, m) in NATIVE_NM[dataset]:
+        base = os.path.join(STAGE2, f"{STAGE2_PREFIX[dataset]}_{role}")
+    else:
+        base = os.path.join(STAGE1, f"{role}_{dataset}")
+    path = os.path.join(base, f"{map_name}_n{n}m{m}.csv")
     if not os.path.exists(path):
         return None
     rows = list(csv.DictReader(open(path)))

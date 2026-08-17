@@ -57,14 +57,18 @@ joint simply seeing 4x more data.
 - `stage1_dataset_selection/{role}_{A,B}/{map}_n{N}m{M}.csv` — the crossover comparison: each
   role's dataset-A (Tier B) and dataset-B (Tier A) checkpoint, evaluated on a **common grid
   spanning both regimes** (Tier B's own small grid + Tier A's own large grid), same seed
-  (987654321), same protocol as Stage 2. Built from four pre-existing sweeps
-  (`tierB_indist`/`tierB_mapextrap` = dataset-A model on the small grid; `tierB_extrap` =
-  dataset-A model on the large grid, since Tier B's extrapolation target is defined as exactly
-  Tier A's own grid; `tierA_indist`/`tierA_mapextrap` = dataset-B model on the large grid) plus
-  one new sweep run specifically to complete this quadrant: `eval_tierA_on_tierB_grid.sh`
-  (dataset-B/Tier A checkpoints evaluated on dataset-A/Tier B's own small grid — this comparison
-  did not exist anywhere in the prior data and required a fresh 180-cell eval, since evaluating
-  each model only on its own training range would not answer which dataset generalizes better).
+  (987654321), same protocol as Stage 2. **Only the off-native-grid cells are delivered here** —
+  `{role}_A/` holds dataset-A evaluated on the *large* grid (Tier B's extrapolation target, =
+  Tier A's own grid; from `eval_tierB_extrap_*.sh`), and `{role}_B/` holds dataset-B evaluated on
+  the *small* grid (the one genuinely new sweep this required, `eval_tierA_on_tierB_grid.sh`,
+  run specifically because this comparison — evaluating dataset B outside its own training range
+  — did not exist anywhere in the prior data). Each dataset's performance on its *own* native
+  grid is **not duplicated here** — it's the same data already delivered under
+  `stage2_expert_vs_general/tier{B,A}_{role}/` (dataset A's native grid = Tier B's own grid;
+  dataset B's native grid = Tier A's own grid), byte-identical, so `gen_exp16_stage1.py` reads
+  those cells from there directly. An earlier version of this delivery copied all four quadrants
+  into `stage1_dataset_selection/`, duplicating 354 files already present under
+  `stage2_expert_vs_general/`; those copies were removed once confirmed byte-identical.
 - `stage2_agg/` and the new `stage1_agg/` — aggregate CSVs per (model, map, N, M): `cost_ratio,
   exact_match, diff_mean, diff_max, diff_std, alloc_ms, nn_plan_ms, solver_ms, n`. No dedicated
   `infeasible`/`fallback` columns — the per-instance CSV doesn't carry them directly; `nn_k`
