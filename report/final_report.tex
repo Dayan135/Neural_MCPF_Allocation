@@ -117,8 +117,13 @@ roughly 20\% of optimal. We then ask whether map-specialized allocators beat a s
 Five models, one trained on all four benchmark maps and four trained on a single map each, are
 compared on solution quality and wall-time to determine whether map-aware routing is worthwhile.
 Pushed further, to $220\times430$ on the four real benchmark maps, the same generalist stays within
-9.6\% of optimal at 6.6--16.1$\times$ speedup.
-\TODOin{closing sentence with the specialist-vs-generalist headline, once dataset A lands}
+9.6\% of optimal at 6.6--16.1$\times$ speedup. The generalist ties its map specialists on cost
+everywhere, including the structured maze, and the real risk is not specializing too little but
+misrouting an instance to the wrong specialist. A second training-data comparison, many
+regular-size instances against fewer large ones, finds no crossover: the regular-size dataset
+wins on every model role, on both its own scale and the large one, so a fixed labeling budget is
+better spent on more instances at a moderate scale than on fewer instances pushed to the scale
+limit.
 \end{abstract}
 
 \vspace{2pt}
@@ -557,8 +562,9 @@ maps and weak on the fourth.
 
 \begin{table}[htbp]
 \centering
-\caption{Model inventory, dataset-B leg (five roles). Dataset A is still training on the cluster;
-five more rows are added once it finishes.}
+\caption{Model inventory, dataset-B leg (five roles). Dataset A has since finished training and
+is evaluated below; its five rows are delivered in
+\texttt{report/data/exp16/model\_inventory.csv} rather than duplicated in this table.}
 \small
 \begin{tabularx}{\textwidth}{llXcccc}
 \toprule
@@ -609,14 +615,28 @@ map solved all three instances there, none hit the timeout. We did not observe a
 which the solver stops returning altogether within this sweep, only rising unpredictability, so
 that third ceiling is not yet reached at 220$\times$430.
 
-\begin{TODO}{TABLE + FIGURE + TEXT --- R2, dataset selection (RQ2)}
-Five head-to-heads, one per role, each between its dataset-A and dataset-B model on a common
-$(N,M)$ grid spanning both regimes. \emph{Figure:} cost ratio against problem size, one line per
-dataset, showing where the curves cross. \emph{Table:} winner per role with the margin.
-\emph{Text ($\sim$150 words):} whether the crossover is consistent across maps, and whether
-many-small or few-large is the better use of a fixed labeling budget.
-\emph{Source: \texttt{stage1\_dataset\_selection/} (data request \S4).}
-\end{TODO}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{fig_stage1_crossover.png}
+\caption{Dataset A vs.\ B, mean cost ratio over each role's own domain, on both regimes. Solid
+lines never cross: dataset A (green) sits below dataset B (navy) at every point in both panels.}
+\label{fig:stage1crossover}
+\end{figure}
+
+\input{stage1_winner_table.tex}
+
+Table~\ref{tab:stage1winners} and Figure~\ref{fig:stage1crossover} show no crossover for any
+role: dataset A wins on both its own small grid and on dataset B's large grid, for all five
+roles, everywhere it was tested. The margin ranges from $0.011$ on \texttt{maze} to $0.027$ on
+\texttt{empty}, and the two curves rise together with $M$ rather than swapping order, so the gap
+is consistent rather than regime-dependent. This contradicts the RQ2 hypothesis, which expected
+each dataset to win in its own regime. The likely explanation is sample count: dataset A supplies
+$6\times$ more instances per configuration (20k/2k/2k against 3k/500/500), and that advantage
+evidently outweighs training directly at the target scale, even when dataset B is evaluated on
+its own home turf. For a fixed labeling budget the result favors many regular-size instances over
+fewer large ones: dataset A's checkpoints extrapolate to the large regime better than dataset B's
+checkpoints perform natively there, at a fraction of the per-instance solver cost needed to
+generate the labels in the first place.
 
 \begin{table}[htbp]
 \centering
@@ -698,8 +718,10 @@ misrouting to maze, not training on maze, that is expensive, which is the more i
 we flagged as the alternative. The timing prediction failed outright: specialist and joint are not
 indistinguishable, speedup ranges from 2.3$\times$ for a specialist misrouted to maze to
 17.1$\times$ for a specialist on its own map, and the gap tracks fallback replanning rather than
-the environment. RQ2 cannot be scored yet. Dataset A's training run had not finished when this
-section was written, so the dataset-A-vs-B crossover is still open.
+the environment. The RQ2 prediction failed as well, in the opposite direction from a mixed
+result: we expected a crossover, and found none. Dataset A wins for every role on both regimes,
+so the more-data, moderate-scale strategy is the better use of a fixed labeling budget outright,
+not merely in its own range.
 
 % ═════════════════════════════════════════════════════════════════════════════
 \section{Discussion}
@@ -764,10 +786,12 @@ The RobustMCPF solver, the exact LKH and CBS pipeline used here for ground truth
 comparison baseline, is the work of Yehonatan Kidushim, Avraham Natan, Roni Stern and Meir Kalech,
 and is not a contribution of this project. We thank the authors for permission to use it.
 
-\begin{TODO}{TEXT --- verify before submission}
-The references below are standard works, but their venues, years and page numbers have not been
-checked against the originals. Verify each one. Related work (Section~2.4) is deliberately one
-paragraph; expand it into a standalone section if the grader expects a fuller treatment.
+\begin{TODO}{TEXT --- decide before submission}
+Related work (Section~2.4) is deliberately one paragraph; expand it into a standalone section if
+the grader expects a fuller treatment. (References below have been checked against their
+original venues, years and page numbers; two corrections were applied: \texttt{robustmcpf} was
+missing its AAAI volume/issue/pages, and \texttt{pointernet} cited the retroactive name
+``NeurIPS'' for a paper published in 2015 under the conference's contemporaneous name, NIPS.)
 \end{TODO}
 
 % ═════════════════════════════════════════════════════════════════════════════
@@ -775,7 +799,7 @@ paragraph; expand it into a standalone section if the grader expects a fuller tr
 \begin{thebibliography}{99}
 \setlength{\itemsep}{0pt}
 \bibitem{robustmcpf} Y.~Kidushim, A.~Natan, R.~Stern, and M.~Kalech. Robust Multiagent Combinatorial
-  Path Finding. \emph{AAAI}, 2026.
+  Path Finding. \emph{Proceedings of the AAAI Conference on Artificial Intelligence}, 40(35):29513--29520, 2026.
 \bibitem{cbs} G.~Sharon, R.~Stern, A.~Felner, and N.~Sturtevant. Conflict-based search for optimal
   multi-agent pathfinding. \emph{Artificial Intelligence}, 219:40--66, 2015.
 \bibitem{lkh} K.~Helsgaun. An effective implementation of the Lin--Kernighan traveling salesman
@@ -790,7 +814,8 @@ paragraph; expand it into a standalone section if the grader expects a fuller tr
   pathfinding. \emph{ICAPS}, 2020.
 \bibitem{primal} G.~Sartoretti et al. PRIMAL: Pathfinding via reinforcement and imitation
   multi-agent learning. \emph{IEEE Robotics and Automation Letters}, 4(3):2378--2385, 2019.
-\bibitem{pointernet} O.~Vinyals, M.~Fortunato, and N.~Jaitly. Pointer networks. \emph{NeurIPS}, 2015.
+\bibitem{pointernet} O.~Vinyals, M.~Fortunato, and N.~Jaitly. Pointer networks. \emph{Advances in
+  Neural Information Processing Systems (NIPS)}, 28:2692--2700, 2015.
 \bibitem{bello} I.~Bello, H.~Pham, Q.~V.~Le, M.~Norouzi, and S.~Bengio. Neural combinatorial
   optimization with reinforcement learning. \emph{ICLR Workshop}, 2017.
 \bibitem{kool} W.~Kool, H.~van Hoof, and M.~Welling. Attention, learn to solve routing problems!
@@ -822,13 +847,19 @@ evaluated. Training ran on the cluster's \texttt{gpu} partition, \texttt{rtx\_60
 \texttt{cpu} partition, same node per cell. Torch version and exact Slurm job identifiers were not
 recorded on the machine this report is written on and are not yet available.
 
-\begin{TODO}{FIGURE --- optional, training convergence}
-Train and validation loss and per-goal accuracy against epoch for the ten models, with the
-best-validation checkpoint marked. Worth including if the models show the same overfitting signature
-as earlier runs, where validation loss turned upward well before the epoch budget ended and
-best-validation checkpointing acted as implicit early stopping.
-\emph{Source: \texttt{train\_logs/} (data request \S6.5).}
-\end{TODO}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\textwidth]{fig_tierB_convergence.png}
+\caption{Training convergence for Tier B (dataset A)'s four specialists — the only 4 of the 10
+models whose per-epoch logs were pulled from the cluster. Circles mark the best-validation-loss
+checkpoint. The signature is milder than the earlier large-model run (Section~\ref{sec:design}):
+\texttt{empty} and \texttt{random} are still improving at the 50-epoch budget's end (best epoch
+48 and 43), while \texttt{maze} and \texttt{room} peak earlier (epoch 29 and 41) and drift upward
+afterward, so best-validation checkpointing still does some work but is not doing heavy lifting
+here the way it did in Section~\ref{sec:design}. Tier A's logs and Tier B's joint model were not
+pulled for this report.}
+\label{fig:tierBconv}
+\end{figure}
 
 \subsection*{Raw data}
 
