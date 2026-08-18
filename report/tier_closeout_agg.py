@@ -1,6 +1,8 @@
 """
-Shared aggregation helpers for the Tier A/B (Exp 16-17) per-map-vs-joint closeout
-figures. Reads the raw per-instance CSVs pulled from the cluster into
+Shared aggregation helpers for the Exp 16-17 per-map-vs-joint closeout figures.
+The tierA_/tierB_ prefixes below are on-disk run names: tierA = the LARGE training
+dataset, tierB = the REGULAR one (the report uses those descriptive names).
+Reads the raw per-instance CSVs pulled from the cluster into
 results/fullpipe_tier{A,B}_{indist,extrap,mapextrap}/<checkpoint>/<map>_n{N}m{M}.csv
 (columns written by evaluation/full_pipeline_eval.py: inst_seed, cost_nn,
 cost_solver, nn_k, solver_k, conflicts_nn, conflicts_solver, alloc_ms,
@@ -27,7 +29,7 @@ GRIDS = {
     "A": {"own": {"N": [60, 120, 180], "M": [100, 225, 350]},
           "extrap": {"N": [190, 205, 220], "M": [370, 400, 430]}},
     "B": {"own": {"N": [30, 55, 80], "M": [50, 100, 150]},
-          "extrap": {"N": [60, 120, 180], "M": [100, 225, 350]}},  # = Tier A's own grid
+          "extrap": {"N": [60, 120, 180], "M": [100, 225, 350]}},  # = the large dataset's own grid
 }
 
 

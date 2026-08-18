@@ -1,12 +1,12 @@
 """
-Exp 16 report tables/figures — Tier A (Dataset A leg) only.
+Exp 16 report tables/figures — large-dataset models only (files under tierA_*).
 
-Report convention (2026-08-18 rename): Dataset A = Tier A (large/sparse), Dataset B = Tier B
-(regular/dense) — see gen_exp16_stage1.py's docstring for the full translation note against the
-old on-disk convention. This script only builds the Stage-2 (specialist-vs-generalist, R3/R4) and
-scale-extrapolation pieces, which are Tier-A-only by construction (RQ3 is reported for one leg;
-see final_report.tex Section 6). Stage 1 (Dataset-A-vs-B, R2) needs both tiers and is built by
-gen_exp16_stage1.py instead.
+The report names the two training datasets LARGE and REGULAR; see gen_exp16_stage1.py's docstring
+for the mapping onto the on-disk tierA_/tierB_ prefixes. This script builds only the Stage-2
+(specialist-vs-generalist, R3/R4) and scale-extrapolation pieces, which currently cover the
+large-dataset leg alone — RQ3 is reported for one leg only, though the regular-dataset leg has
+complete 5x4 coverage on disk and could be aggregated the same way. Stage 1 (large vs regular, R2)
+needs both legs and is built by gen_exp16_stage1.py instead.
 
 Reads the per-instance CSVs already reorganized into report/data/exp16/stage2_expert_vs_general/
 (the tracked deliverable — not results/, which is git-ignored and cluster-pull-only).
@@ -135,7 +135,7 @@ ax.set_yticks(np.arange(len(ROLES)))
 ax.set_yticklabels([r if r != "joint" else "joint (generalist)" for r in ROLES], fontsize=11)
 ax.set_xlabel("Evaluated on map", fontsize=10.5)
 ax.set_ylabel("Trained on", fontsize=10.5)
-ax.set_title("Tier A (Dataset A) — specialist vs. generalist,\nexecution-cost ratio, own N,M grid",
+ax.set_title("Large-dataset models — specialist vs. generalist,\nexecution-cost ratio, own N,M grid",
              fontsize=11.5)
 for i in range(len(ROLES)):
     for j in range(len(MAPS)):
@@ -235,14 +235,14 @@ with open(tex_path, "w") as f:
                             f"{s['cost_ratio']:.3f} & {s['exact_match']*100:.1f}\\% & "
                             f"{s['diff_mean']:.1f} & {speedup:.1f}$\\times$ & {s['n']} \\\\\n")
     f.write("\\bottomrule\n")
-    f.write("\\caption{Full per-configuration results, Dataset A leg (Tier A models, own $N,M$ "
+    f.write("\\caption{Full per-configuration results, large-dataset models (own $N,M$ "
             "grid). 174 of 180 possible (model, map, $N$, $M$) cells; missing cells were not yet "
             "finished on the cluster at pull time. $n$: instances evaluated in that one cell "
             "(out of a nominal 100).}\n")
     f.write("\\label{tab:fullconfig}\n\\end{longtable}\n}\n")
 print(f"Wrote {tex_path}")
 
-print("\n--- headline numbers (own N,M grid; Tier A / Dataset A only) ---")
+print("\n--- headline numbers (own N,M grid; large-dataset models only) ---")
 print(f"Diagonal (specialist-on-own-map + joint-on-each-map) mean cost ratio: "
       f"{np.mean([d['cost_ratio'] for d in diag]):.3f}")
 print(f"Off-diagonal (specialist-on-other-map) mean cost ratio: "

@@ -1,22 +1,26 @@
 """
-Exp 16 Stage 1 — dataset-A-vs-B head-to-head (RQ2), completing the TODO at
-final_report.tex's R2 block.
+Exp 16 Stage 1 — large-vs-regular dataset head-to-head (RQ2).
 
-Report convention (2026-08-18 rename): Dataset A = Tier A (large/sparse), Dataset B = Tier B
-(regular/dense) — the letters now match the tier names. The raw files on disk under
-report/data/exp16/ still use the OLD convention documented in manifest.md ("Tier A = dataset B,
-Tier B = dataset A"); STAGE2_PREFIX/NATIVE_NM/STAGE1_RAW_SUFFIX below are the translation layer,
-so every other name in this script (winner_rows, the figure, the table) is in the new convention.
+NAMING (2026-08-19). The report calls the two training datasets LARGE and REGULAR, after what
+distinguishes them, because the older letter-based names were inverted between the report and
+the raw files and nobody could keep them straight. The mapping is:
 
-Each dataset is scored on BOTH regimes (its own native grid and the other dataset's grid), but
-the native-grid cells are never re-delivered here — they're byte-identical to files already
-committed under stage2_expert_vs_general/ (Dataset A's own grid = tierA_{role}/; Dataset B's own
-grid = tierB_{role}/), so duplicating them under stage1_dataset_selection/ just bloated the repo
-with 354 redundant tracked paths for no new data. stage1_dataset_selection/{role}_{A,B}/ (raw,
-old-convention suffixes) holds only the genuinely new cells: old-dataset-A (= Tier B = new
-Dataset B) evaluated on the large grid, and old-dataset-B (= Tier A = new Dataset A) evaluated on
-the small grid (the new eval_tierA_on_tierB_grid.sh sweep run specifically to fill this
-quadrant). load_cell() below picks the right source directory by which grid (n, m) falls in.
+    LARGE   = N 60-180, M 100-350, 3k/500/500 per config  -> files under tierA_*, key "A" here
+    REGULAR = N 30-80,  M 50-150,  20k/2k/2k  per config  -> files under tierB_*, key "B" here
+
+The single-letter keys survive only inside this script, because they address the on-disk
+directory layout and the column names in stage1_agg/stage1_winners.csv (ratio_A, ratio_B, n_A,
+n_B). Everything this script *emits* — figure labels, table headers, the winner column — uses
+the descriptive names. Do not reintroduce the letters into report-facing output.
+
+Each dataset is scored on BOTH regimes (its own native grid and the other's), but native-grid
+cells are not re-delivered under stage1_dataset_selection/ — they are byte-identical to files
+already committed under stage2_expert_vs_general/ (large's own grid = tierA_{role}/, regular's
+own grid = tierB_{role}/), so duplicating them added 354 redundant tracked paths and no data.
+stage1_dataset_selection/{role}_{A,B}/ therefore holds only the genuinely new off-native cells,
+and its {A,B} suffix follows the OLD raw convention, i.e. always the opposite letter of the key
+used here — hence STAGE1_RAW_SUFFIX below. load_cell() picks the source directory by which grid
+(n, m) falls in.
 
 Per docs/exp16_data_request.md §4: each role is compared on its own domain (a specialist on its
 own map; the generalist on all 4 maps), selection nominally on validation but only test-time
@@ -54,11 +58,11 @@ SMALL_N, SMALL_M = [30, 55, 80], [50, 100, 150]
 LARGE_N, LARGE_M = [60, 120, 180], [100, 225, 350]
 SMALL_NM = {(n, m) for n in SMALL_N for m in SMALL_M}
 LARGE_NM = {(n, m) for n in LARGE_N for m in LARGE_M}
-# New convention: Dataset A = Tier A, native grid large. Dataset B = Tier B, native grid small.
+# Key "A" = LARGE dataset (native grid large). Key "B" = REGULAR dataset (native grid small).
 STAGE2_PREFIX = {"A": "tierA", "B": "tierB"}
 NATIVE_NM = {"A": LARGE_NM, "B": SMALL_NM}
 # Off-native (extrapolated) cells live under the OLD-convention raw suffix, which is always the
-# other letter (old dataset A = Tier B = new "B"; old dataset B = Tier A = new "A").
+# other letter: the large dataset's off-native cells sit under {role}_B/, and vice versa.
 STAGE1_RAW_SUFFIX = {"A": "B", "B": "A"}
 
 
@@ -79,10 +83,10 @@ def load_cell(role, dataset, map_name, n, m):
     return dict(n=len(rows), cost_ratio=ratio.mean(), exact_match=(cn == cs).mean())
 
 
-# ── Per-role winner: mean cost ratio, dataset A vs B, over the role's own domain,
+# ── Per-role winner: mean cost ratio, large vs regular, over the role's own domain,
 #    unioned across BOTH grids (the actual common-grid comparison) — each dataset
-#    is evaluated on BOTH the small grid (its native regime for A) and the large
-#    grid (its native regime for B); this is the whole point of a crossover: both
+#    is evaluated on BOTH the small grid (regular's native regime) and the large
+#    grid (large's native regime); this is the whole point of a crossover: both
 #    checkpoints have to be scored on both regimes, not just their own turf. ────
 winner_rows = []
 for role in ROLES:
@@ -113,7 +117,7 @@ with open(os.path.join(AGG_OUT, "stage1_winners.csv"), "w", newline="") as f:
         w.writerow(r)
 
 # ── Crossover figure: cost ratio vs M, two panels (small regime | large regime),
-#    two lines per panel (dataset A, dataset B), averaged over each role's own
+#    two lines per panel (large, regular), averaged over each role's own
 #    domain then over roles — mirrors fig8's own/extrapolated split so the two
 #    grids' overlapping M-ranges don't produce a misleading merged x-axis. ─────
 def by_m_all_roles(dataset, ns, ms):
@@ -134,14 +138,14 @@ def by_m_all_roles(dataset, ns, ms):
 COLOR_A, COLOR_B = "#1F497D", "#1BAF7A"
 fig, (ax_small, ax_large) = plt.subplots(1, 2, figsize=(11.5, 4.3), sharey=True)
 fig.subplots_adjust(wspace=0.08)
-for ax, (ns, ms), title in [(ax_small, (SMALL_N, SMALL_M), "Small/regular regime\n(Dataset B home turf; Dataset A extrapolating down)"),
-                             (ax_large, (LARGE_N, LARGE_M), "Large regime\n(Dataset A home turf; Dataset B extrapolating up)")]:
+for ax, (ns, ms), title in [(ax_small, (SMALL_N, SMALL_M), "Regular regime\n(regular dataset at home; large dataset extrapolating down)"),
+                             (ax_large, (LARGE_N, LARGE_M), "Large regime\n(large dataset at home; regular dataset extrapolating up)")]:
     a = by_m_all_roles("A", ns, ms)
     b = by_m_all_roles("B", ns, ms)
     ax.plot(sorted(a), [a[m] for m in sorted(a)], "-o", color=COLOR_A, lw=2, ms=6,
-            label="Dataset A (Tier A, fewer/larger)")
+            label="large dataset (fewer, larger instances)")
     ax.plot(sorted(b), [b[m] for m in sorted(b)], "-o", color=COLOR_B, lw=2, ms=6,
-            label="Dataset B (Tier B, more/regular)")
+            label="regular dataset (more, moderate instances)")
     ax.set_xlabel("Goals M", fontsize=10.5)
     ax.axhline(1.0, color="black", lw=0.8, linestyle=":")
     ax.set_title(title, fontsize=10.5)
@@ -150,7 +154,7 @@ for ax, (ns, ms), title in [(ax_small, (SMALL_N, SMALL_M), "Small/regular regime
     ax.spines[["top", "right"]].set_visible(False)
 ax_small.set_ylabel("Execution-cost ratio (lower better)", fontsize=10.5)
 ax_small.legend(fontsize=8.5, loc="upper left")
-fig.suptitle("Stage 1 — Dataset A vs. B, mean over each role's own domain", fontsize=11.5, y=0.99)
+fig.suptitle("Stage 1 — large vs. regular dataset, mean over each role's own domain", fontsize=11.5, y=0.99)
 fig.tight_layout(rect=[0, 0, 1, 0.86])
 out_fig = os.path.join(FIG_OUT, "fig_stage1_crossover.png")
 plt.savefig(out_fig, dpi=200, bbox_inches="tight")
@@ -162,15 +166,15 @@ tex_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stage1_winn
 with open(tex_path, "w") as f:
     f.write("% Auto-generated by gen_exp16_stage1.py. Do not edit by hand.\n")
     f.write("\\begin{table}[htbp]\n\\centering\n")
-    f.write("\\caption{Stage 1: Dataset A vs.\\ B, mean cost ratio over each role's own domain "
+    f.write("\\caption{Stage 1: large vs.\\ regular dataset, mean cost ratio over each role's own domain "
             "(own map for a specialist, all 4 maps for the generalist), unioned across both "
             "grids (own-grid and extrapolated-grid cells both included). Winner is the lower "
             "(better) mean.}\n")
     f.write("\\small\n\\begin{tabularx}{\\textwidth}{lXXXl}\n\\toprule\n")
-    f.write("Role & Dataset A ratio & Dataset B ratio & Margin & Winner \\\\\n\\midrule\n")
+    f.write("Role & Large-dataset ratio & Regular-dataset ratio & Margin & Winner \\\\\n\\midrule\n")
     for r in winner_rows:
         role_disp = "generalist" if r["role"] == "joint" else r["role"]
         f.write(f"{role_disp} & {r['ratio_A']:.3f} & {r['ratio_B']:.3f} & "
-                f"{r['margin']:.3f} & {'A' if r['winner']=='A' else 'B'} \\\\\n")
+                f"{r['margin']:.3f} & {'large' if r['winner']=='A' else 'regular'} \\\\\n")
     f.write("\\bottomrule\n\\end{tabularx}\n\\label{tab:stage1winners}\n\\end{table}\n")
 print(f"Wrote {tex_path}")

@@ -1,8 +1,9 @@
 """
 Exp 16 training-convergence figure (final_report.tex appendix TODO, optional).
-Only 4 of the 10 models have per-epoch logs delivered (report/data/exp16/train_logs/) —
-Tier B's four specialists, pulled from the retrain this session watched directly. Tier A's
-logs and Tier B's joint weren't pulled (see manifest.md). Run from report/ with mcpf_env active.
+Only 4 of the 10 models have per-epoch logs delivered (report/data/exp16/train_logs/) — the
+REGULAR dataset's four specialists (files tierB_*), pulled from the retrain this session watched
+directly. The large dataset's logs and the regular generalist's weren't pulled (see manifest.md).
+Run from report/ with mcpf_env active.
 """
 import csv
 import os
@@ -45,7 +46,7 @@ for ax, ylabel, title in [(ax_loss, "Loss", "(a) Total loss"),
     ax.set_axisbelow(True)
     ax.spines[["top", "right"]].set_visible(False)
 ax_loss.legend(fontsize=8.5, loc="upper right", title="train (solid) / val (dashed)", title_fontsize=7.5)
-fig.suptitle("Tier B (dataset A) specialists — training convergence, marked at the "
+fig.suptitle("Regular-dataset specialists — training convergence, marked at the "
              "best-validation-loss checkpoint", fontsize=11.5)
 fig.tight_layout(rect=[0, 0, 1, 0.93])
 out = os.path.join(FIG_OUT, "fig_tierB_convergence.png")
