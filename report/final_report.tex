@@ -533,24 +533,29 @@ tests.
 \subsection{Design}
 
 \textbf{The scale wall.} We sweep $N$ and $M$ on each map until the solver's mean wall-time
-approaches 60 seconds. This bounds the study in three ways that should not be conflated. The
-labeling ceiling is the largest $(N,M)$ at which the solver can still produce training labels in
-acceptable time, which bounds what the large-instance dataset can contain. The evaluation ceiling is
-the largest $(N,M)$ at which a solver baseline exists at all; past that point the cost ratio has no
-denominator and cannot be computed. Beyond both, only solver-independent quantities remain
-measurable.
+approaches 60 seconds (Figure~\ref{fig:scalewall}, interpreted under RQ1 below). This wall is what
+bounds the study: every training label still needs an exact solve, so it caps what a large-instance
+dataset can contain, and it caps how far a cost-ratio comparison can even be evaluated, since past
+it there is no solver baseline left to divide by.
 
-\textbf{The model matrix.} Five roles, namely one generalist trained on all four maps and four
-specialists trained on \texttt{empty}, \texttt{random}, \texttt{maze} and \texttt{room}
-respectively, are each trained on two datasets: (A) many regular-size instances, and (B) fewer
-large instances reaching toward the scale wall. This gives ten models, all h128/L6.
+\textbf{Two training regimes, one per tier.} We compare two datasets, and deliberately name them to
+match the model tier trained on each, so the two naming schemes never disagree. \textbf{Dataset A}
+is the \emph{large} regime: $N\in\{60,120,180\}$, $M\in\{100,225,350\}$, 3000 train / 500 val / 500
+test instances per configuration, labeled at a per-instance solver time that on the hardest cells
+approaches the practical one-minute ceiling above. \textbf{Dataset B} is the \emph{regular} regime:
+$N\in\{30,55,80\}$, $M\in\{50,100,150\}$, 20000/2000/2000 instances per configuration, labeled in
+roughly ten seconds per instance, $6\times$ more samples than Dataset A per configuration. Five
+roles, one generalist trained on all four maps and four specialists trained on \texttt{empty},
+\texttt{random}, \texttt{maze} and \texttt{room} respectively, are each trained once on Dataset A,
+giving the five \textbf{Tier A} models (Table~\ref{tab:modelinv}), and once on Dataset B, giving
+the five \textbf{Tier B} models (Table~\ref{tab:modelinvB}). Ten models in total, all h128/L6.
 
 \textbf{Why only the smaller architecture.} We fix the network to h128/L6 because it beat the larger
 h256/L8 in-distribution on every aggregate metric, with a $1.048$ versus $1.052$ execution-cost
 ratio and $0.433$ versus $0.402$ exact match, while running roughly 20\% faster. The extra
 $2.5\times$ in parameters bought no accuracy, and the larger model reached its validation optimum
 early and then overfitted. The ranking does reverse far out of distribution, where the larger model
-extrapolates better, but dataset~B places the large-instance regime inside the training distribution
+extrapolates better, but Dataset A places the large-instance regime inside the training distribution
 by construction, so the in-distribution verdict is the applicable one.
 
 \textbf{Protocol.} All models see identical instances for a given (map, $N$, $M$) cell, which allows
@@ -562,9 +567,7 @@ maps and weak on the fourth.
 
 \begin{table}[htbp]
 \centering
-\caption{Model inventory, dataset-B leg (five roles). Dataset A has since finished training and
-is evaluated below; its five rows are delivered in
-\texttt{report/data/exp16/model\_inventory.csv} rather than duplicated in this table.}
+\caption{Model inventory, Dataset A leg (Tier A, five roles).}
 \small
 \begin{tabularx}{\textwidth}{llXcccc}
 \toprule
@@ -578,13 +581,36 @@ Model & Role & Train map(s) & $N$ range & $M$ range & Epochs & Batch \\
 \bottomrule
 \end{tabularx}
 \label{tab:modelinv}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Model inventory, Dataset B leg (Tier B, five roles).}
+\small
+\begin{tabularx}{\textwidth}{llXcccc}
+\toprule
+Model & Role & Train map(s) & $N$ range & $M$ range & Epochs & Batch \\
+\midrule
+\texttt{tierB\_joint}   & generalist & all four & 30--80 & 50--150 & 50 & 32 \\
+\texttt{tierB\_empty}   & specialist & empty & 30--80 & 50--150 & 50 & 32 \\
+\texttt{tierB\_random}  & specialist & random & 30--80 & 50--150 & 50 & 32 \\
+\texttt{tierB\_maze}    & specialist & maze & 30--80 & 50--150 & 50 & 32 \\
+\texttt{tierB\_room}    & specialist & room & 30--80 & 50--150 & 50 & 32 \\
+\bottomrule
+\end{tabularx}
+\label{tab:modelinvB}
 
 \smallskip
-\small\noindent All five share the h128/L6 universal architecture, about 1.19M parameters, the
-same as Exp 12's h128/L6, with lr $5\times10^{-4}$ and gradient clipping 1.0. Three seeds were
-trained per role (0--2); seed 0 is the one evaluated below. Best validation loss, best epoch and
-training wall-time are not shown because only the evaluation CSVs were pulled from the cluster for
-these runs, not the per-epoch training logs. Full columns in
+\small\noindent Both tiers share the h128/L6 universal architecture, about 1.19M parameters (the
+same as Exp 12's h128/L6), lr $5\times10^{-4}$ and gradient clipping 1.0; seed 0 is the one
+evaluated throughout. Tier A trained 3 seeds per role (0--2); Tier B trained 2 (0--1, cut from a
+planned 3 partway through to let all four per-map configs run in parallel under the cluster's
+per-user GPU quota). Tier A's batch size (4) is far smaller than Tier B's (32) because Tier A's
+instances are larger ($N,M$ up to $180\times350$) and hit GPU memory limits sooner. Best
+validation loss, best epoch and training wall-time are blank for Tier A (only evaluation CSVs
+were pulled, not per-epoch logs) and partly blank for Tier B (available for the four specialists,
+not the joint run, whose training history spans several resubmissions and isn't attributable to
+one run). Full columns, including what is and is not populated per model, in
 \texttt{report/data/exp16/model\_inventory.csv}.
 \end{table}
 
@@ -609,40 +635,54 @@ it does show is that a single pathological instance, not the typical one, is wha
 fixed compute budget. The \textbf{labeling ceiling} is therefore map-dependent and probabilistic
 rather than a fixed $(N,M)$: \texttt{maze} stayed at 0\% timeouts everywhere tested, \texttt{empty}
 hit one 33\% cell, and \texttt{random} and \texttt{room} hit 33--67\% timeout rates at some cells
-and 0\% at larger ones, which is exactly the profile that motivated dataset B's
+and 0\% at larger ones, which is exactly the profile that motivated Dataset A's
 500-sample-per-config size and 600\,s per-instance timeout. The \textbf{evaluation ceiling} is at least $N{=}220,M{=}430$: every
 map solved all three instances there, none hit the timeout. We did not observe a size \textbf{beyond}
 which the solver stops returning altogether within this sweep, only rising unpredictability, so
 that third ceiling is not yet reached at 220$\times$430.
 
+Figure~\ref{fig:stage1crossover} answers RQ2 by evaluating each role's Dataset A and Dataset B
+checkpoints on a common pair of grids spanning both regimes, so every checkpoint is scored both at
+home and away. The left panel is Dataset B's native grid (small, $N\in\{30,55,80\}$,
+$M\in\{50,100,150\}$): Dataset B is interpolating inside its training range there, while Dataset A
+is extrapolating downward, to sizes well below anything it ever trained on. The right panel is
+Dataset A's native grid (large, $N\in\{60,120,180\}$, $M\in\{100,225,350\}$): the roles reverse,
+Dataset A is at home and Dataset B is extrapolating upward, to sizes beyond anything it ever
+trained on.
+
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.85\textwidth]{fig_stage1_crossover.png}
 \caption{Dataset A vs.\ B, mean cost ratio over each role's own domain, on both regimes. Solid
-lines never cross: dataset A (green) sits below dataset B (navy) at every point in both panels.}
+lines never cross: Dataset B (green) sits below Dataset A (navy) at every point in both panels,
+whether Dataset B is interpolating at home (left) or extrapolating up (right).}
 \label{fig:stage1crossover}
 \end{figure}
 
 \input{stage1_winner_table.tex}
 
-Table~\ref{tab:stage1winners} and Figure~\ref{fig:stage1crossover} show no crossover for any
-role: dataset A wins on both its own small grid and on dataset B's large grid, for all five
-roles, everywhere it was tested. The margin ranges from $0.011$ on \texttt{maze} to $0.027$ on
-\texttt{empty}, and the two curves rise together with $M$ rather than swapping order, so the gap
-is consistent rather than regime-dependent. This contradicts the RQ2 hypothesis, which expected
-each dataset to win in its own regime. The likely explanation is sample count: dataset A supplies
-$6\times$ more instances per configuration (20k/2k/2k against 3k/500/500), and that advantage
-evidently outweighs training directly at the target scale, even when dataset B is evaluated on
-its own home turf. For a fixed labeling budget the result favors many regular-size instances over
-fewer large ones: dataset A's checkpoints extrapolate to the large regime better than dataset B's
-checkpoints perform natively there, at a fraction of the per-instance solver cost needed to
-generate the labels in the first place.
+Table~\ref{tab:stage1winners} confirms it numerically: no crossover for any role. Dataset B wins
+on both its own small grid and on Dataset A's large grid, for all five roles, everywhere it was
+tested — including the right panel, where Dataset B is the one extrapolating and Dataset A is on
+native ground. The margin ranges from $0.011$ on \texttt{maze} to $0.027$ on \texttt{empty}, and
+the two curves rise together with $M$ rather than swapping order, so the gap is consistent rather
+than regime-dependent. This contradicts the RQ2 hypothesis, which expected each dataset to win in
+its own regime. The likely explanation is sample count: Dataset B supplies $6\times$ more
+instances per configuration (20k/2k/2k against 3k/500/500), and that advantage evidently
+outweighs training directly at the target scale, even when Dataset A is evaluated on its own home
+turf. For a fixed labeling budget the result favors many regular-size instances over fewer large
+ones: Dataset B's checkpoints extrapolate to the large regime better than Dataset A's checkpoints
+perform natively there, at a fraction of the per-instance solver cost needed to generate the
+labels in the first place.
 
 \begin{table}[htbp]
 \centering
-\caption{Joint (generalist) versus the native specialist, dataset-B leg, own $N,M$ grid. Speedup is
-mean solver wall-time divided by mean NN pipeline wall-time, same node. $n$ is instances evaluated,
-joint/specialist.}
+\caption{Joint (generalist) versus the native specialist, Dataset A leg (Tier A models), own
+$N,M$ grid. Speedup is mean solver wall-time divided by mean NN pipeline wall-time, same node.
+$n$ is the total instances evaluated, summed across the model's 9 $(N,M)$ cells
+(joint\,/\,specialist), out of a nominal 900 ($9\times100$); shortfalls come from whole eval
+cells still missing on the cluster (Table~\ref{tab:fullconfig} in the appendix has the per-cell
+breakdown), not from filtered outliers.}
 \small
 \begin{tabularx}{\textwidth}{lXXXXXXc}
 \toprule
@@ -661,9 +701,10 @@ room   & 1.069 & 3.9\% & 10.7$\times$ & 1.066 & 3.8\% & 9.2$\times$  & 786/789 \
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.62\textwidth]{fig_tierA_5x4_heatmap.png}
-\caption{Full $5\times4$ matrix, dataset-B leg: every model (rows) on every map (columns), execution-cost
-ratio, own $N,M$ grid. Asterisked cells are a specialist on its own map. A heatmap is used in place
-of grouped bars to keep all 20 cells, diagonal and off-diagonal, legible in one figure.}
+\caption{Full $5\times4$ matrix, Dataset A leg (Tier A models): every model (rows) on every map
+(columns), execution-cost ratio, own $N,M$ grid. Asterisked cells are a specialist on its own
+map. A heatmap is used in place of grouped bars to keep all 20 cells, diagonal and off-diagonal,
+legible in one figure.}
 \label{fig:tierA54}
 \end{figure}
 
@@ -694,7 +735,7 @@ that one bit wrong is where the appeal of routing collapses.
 These predictions are recorded before the results are available, so that they can be confirmed or
 refuted rather than rationalized afterward.
 
-On RQ2, we expect dataset~A to win at small $(N,M)$ and dataset~B at large $(N,M)$, with a crossover
+On RQ2, we expect Dataset B to win at small $(N,M)$ and Dataset A at large $(N,M)$, with a crossover
 somewhere between, since each dataset places its own regime in-distribution. The interesting
 quantity is not which one wins overall but where the crossover sits, because that determines how a
 fixed labeling budget should be spent.
@@ -711,17 +752,19 @@ identical and a forward pass costs the same either way. Any measured difference 
 to the environment rather than the model, and one that survives scrutiny would be worth
 investigating.
 
-\textbf{Verdict, dataset-B leg.} The RQ3 prediction was half right. We expected the specialist
-advantage to be largest on maze. Instead the two tie everywhere, including maze, 1.057 against
-1.057. The structure-specific effect D5 predicted is real but sits off-diagonal, not on it. It is
-misrouting to maze, not training on maze, that is expensive, which is the more interesting outcome
-we flagged as the alternative. The timing prediction failed outright: specialist and joint are not
-indistinguishable, speedup ranges from 2.3$\times$ for a specialist misrouted to maze to
-17.1$\times$ for a specialist on its own map, and the gap tracks fallback replanning rather than
-the environment. The RQ2 prediction failed as well, in the opposite direction from a mixed
-result: we expected a crossover, and found none. Dataset A wins for every role on both regimes,
-so the more-data, moderate-scale strategy is the better use of a fixed labeling budget outright,
-not merely in its own range.
+\textbf{Verdict, Dataset A leg (RQ3).} The RQ3 prediction was half right. We expected the
+specialist advantage to be largest on maze. Instead the two tie everywhere, including maze, 1.057
+against 1.057. The structure-specific effect D5 predicted is real but sits off-diagonal, not on
+it. It is misrouting to maze, not training on maze, that is expensive, which is the more
+interesting outcome we flagged as the alternative. The timing prediction failed outright:
+specialist and joint are not indistinguishable, speedup ranges from 2.3$\times$ for a specialist
+misrouted to maze to 17.1$\times$ for a specialist on its own map, and the gap tracks fallback
+replanning rather than the environment.
+
+\textbf{Verdict, both legs (RQ2).} The RQ2 prediction failed as well, in the opposite direction
+from a mixed result: we expected a crossover, and found none. Dataset B wins for every role on
+both regimes, so the more-data, moderate-scale strategy is the better use of a fixed labeling
+budget outright, not merely in its own range.
 
 % ═════════════════════════════════════════════════════════════════════════════
 \section{Discussion}
@@ -764,14 +807,15 @@ distances were worth more than every other improvement combined. The model gener
 geometry but not across problem scale, and its speed advantage appears in exactly the regimes where
 the exact solver's does not, at scale and in batch.
 
-On the dataset-B leg, map specialists do not beat the generalist. The two tie on cost everywhere,
-including maze, and the generalist wins on wall-time for one of the four maps. What does justify
-routing is avoiding the alternative failure mode: sending an instance to the wrong specialist costs
-up to 52\% on maze specifically, so a router is worth building only if it can identify the map
-reliably, not to chase a specialist-vs-generalist quality gap that this leg did not find. Which
-training distribution, many regular-size instances or fewer large ones, makes the better use of a
-fixed labeling budget is not yet answered: it needs dataset A, still training on the cluster at the
-time of writing.
+On the Dataset A leg (Tier A models), map specialists do not beat the generalist. The two tie on
+cost everywhere, including maze, and the generalist wins on wall-time for one of the four maps.
+What does justify routing is avoiding the alternative failure mode: sending an instance to the
+wrong specialist costs up to 52\% on maze specifically, so a router is worth building only if it
+can identify the map reliably, not to chase a specialist-vs-generalist quality gap that this leg
+did not find. Which training distribution, many regular-size instances or fewer large ones, makes
+the better use of a fixed labeling budget is now answered: Dataset B (regular size, more samples)
+beats Dataset A (large size, fewer samples) outright, on its own grid and extrapolated onto
+Dataset A's, for every one of the five roles, with no crossover.
 
 \textbf{Future work.} The solver's true tour cost is already computed during data generation and then
 discarded. Storing it would enable a tour-aware loss term
@@ -834,23 +878,27 @@ missing its AAAI volume/issue/pages, and \texttt{pointernet} cited the retroacti
 \section{Appendix}
 % ═════════════════════════════════════════════════════════════════════════════
 
-\subsection*{Full per-configuration results, dataset-B leg}
+\subsection*{Full per-configuration results, Dataset A leg (Tier A)}
 
 \input{tierA_fullconfig_table.tex}
 
-\subsection*{Reproducibility, dataset-B leg}
+\subsection*{Reproducibility}
 
-All five models: h128/L6 universal transformer, \texttt{use\_goal\_dists} enabled, lr
-$5\times10^{-4}$, gradient clip 1.0, batch size 4, 50-epoch budget, 3 seeds trained (0--2), seed 0
-evaluated. Training ran on the cluster's \texttt{gpu} partition, \texttt{rtx\_6000} GPUs. Evaluation
-(\texttt{full\_pipeline\_eval.py}, both the NN pipeline and the solver baseline) ran on the
-\texttt{cpu} partition, same node per cell. Torch version and exact Slurm job identifiers were not
-recorded on the machine this report is written on and are not yet available.
+All ten models (both tiers): h128/L6 universal transformer, \texttt{use\_goal\_dists} enabled, lr
+$5\times10^{-4}$, gradient clip 1.0, 50-epoch budget, seed 0 evaluated. Tier A (Dataset A) used
+batch size 4 and 3 seeds trained (0--2); Tier B (Dataset B) used batch size 32 and 2 seeds trained
+(0--1, cut from a planned 3 partway through to let all four per-map configs run in parallel under
+the cluster's per-user GPU quota) — Tier A's larger instances ($N,M$ up to $180\times350$) hit GPU
+memory limits at a much smaller batch size than Tier B's. Training ran on the cluster's
+\texttt{gpu} partition, \texttt{rtx\_6000} GPUs. Evaluation (\texttt{full\_pipeline\_eval.py}, both
+the NN pipeline and the solver baseline) ran on the \texttt{cpu} partition, same node per cell.
+Torch version and exact Slurm job identifiers were not recorded on the machine this report is
+written on and are not yet available.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.92\textwidth]{fig_tierB_convergence.png}
-\caption{Training convergence for Tier B (dataset A)'s four specialists — the only 4 of the 10
+\caption{Training convergence for Tier B (Dataset B)'s four specialists — the only 4 of the 10
 models whose per-epoch logs were pulled from the cluster. Circles mark the best-validation-loss
 checkpoint. The signature is milder than the earlier large-model run (Section~\ref{sec:design}):
 \texttt{empty} and \texttt{random} are still improving at the 50-epoch budget's end (best epoch
@@ -867,8 +915,11 @@ Per-instance CSVs, aggregates and the model inventory live under \texttt{report/
 tracked in the repository (unlike \texttt{results/}, which is git-ignored). Per-instance columns:
 \texttt{inst\_seed, cost\_nn, cost\_solver, nn\_k, solver\_k, conflicts\_nn, conflicts\_solver,
 alloc\_ms, nn\_plan\_ms, solver\_ms}, written by \texttt{evaluation/full\_pipeline\_eval.py}.
-\texttt{report/data/exp16/manifest.md} documents the Tier A/dataset-B naming, what is and is not
-included, and the open items: dataset A, offline accuracy, training logs, and cluster job
-identifiers.
+\texttt{report/data/exp16/manifest.md} documents what is and is not included and the remaining
+open items (offline accuracy, training logs in the requested per-epoch format, and cluster job
+identifiers) — but in its \emph{own} naming, where ``Tier A'' pairs with ``dataset B'' and
+``Tier B'' with ``dataset A'', the reverse of this report's Dataset A/Dataset B convention, which
+we chose instead to match each tier's own letter. Translate by swapping the letter when
+cross-referencing raw file paths against the manifest.
 
 \end{document}
