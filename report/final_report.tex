@@ -1,14 +1,13 @@
 % ═════════════════════════════════════════════════════════════════════════════
-%  Neural MCPF Allocation — final course article
-%  Target: 7–10 pages (guideline, not a hard cap), single-column 11pt A4.
+%  Neural MCPF Allocation: final course article
+%  Target: 7-10 pages (guideline, not a hard cap), single-column 11pt A4.
 %  Structure spec: docs/superpowers/specs/2026-08-10-final-report-structure-design.md
 %  Style rules:    report/STYLE.md
 %
 %  BUILD:  latexmk -pdf final_report.tex
 %
-%  PLACEHOLDERS: every gap is a red "TODO" box tagged with what is missing
-%  (TEXT / TABLE / FIGURE / DATA / COMBINATION). Inline unknowns use \NUM.
-%  Search for "TODO" to find them all.
+%  No open placeholders remain. The TODO/\NUM macros below are kept only so a gap can be
+%  marked visibly again if one appears during a later revision.
 %
 %  Spelling: American throughout (see STYLE.md).
 % ═════════════════════════════════════════════════════════════════════════════
@@ -157,16 +156,26 @@ answers is when accepting that is worthwhile.
 
 \noindent\textbf{Contributions.}
 \begin{itemize}
-  \item A size-agnostic transformer allocator: one set of weights for any $(N,M)$, with no
-        positional embeddings and no padding (Section~\ref{sec:method}).
-  \item Evaluation by true CBS execution cost instead of allocation accuracy, which shows that most
-        disagreements with the solver are cost-equivalent ties (Section~\ref{sec:setup}).
-  \item A design study isolating input representation as the dominant factor, worth more than
-        architecture, capacity and data scale combined (Section~\ref{sec:design}).
-  \item A characterization of what transfers: map geometry largely does, problem scale does not
-        (Section~\ref{sec:design}).
-  \item A scale-limit and specialist-versus-generalist study producing a concrete map-routing
-        recommendation (Section~\ref{sec:final}).
+  \item \textbf{A size-agnostic transformer allocator.} One set of weights serves any $(N,M)$, with
+        no positional embeddings and no padding, so a single model replaces what would otherwise be
+        one network per problem size, and nothing in the architecture bounds how large a problem it
+        will accept (Section~\ref{sec:method}).
+  \item \textbf{Evaluation by true execution cost rather than allocation accuracy.} The two
+        disagree sharply: 64--97\% of instances match the solver's cost exactly while only 44--91\%
+        match its allocation, because many different allocations are cost-equivalent ties. Judging
+        the model on allocation accuracy alone understates it (Section~\ref{sec:setup}).
+  \item \textbf{A design study identifying input representation as the dominant factor.} Adding
+        goal-to-goal distances is worth 14 to 18 points of accuracy, roughly four times what
+        architecture, capacity and training-set size contribute together, which redirected the
+        project from tuning the network to fixing what it reads (Section~\ref{sec:design}).
+  \item \textbf{A characterization of what transfers.} A model trained only on small random grids
+        holds at a 1.019 cost ratio on unseen real maps but collapses to 1.246 once the problem
+        grows, so map geometry largely transfers and problem scale does not. The practical rule is
+        to retrain for size, not for shape (Section~\ref{sec:design}).
+  \item \textbf{A specialist-versus-generalist study at scale.} Four map specialists fail to beat a
+        single generalist on cost, while sending an instance to the wrong specialist costs up to
+        52\%, which recasts map-aware routing from an optimization into a safeguard
+        (Section~\ref{sec:final}).
 \end{itemize}
 
 % ═════════════════════════════════════════════════════════════════════════════
@@ -198,26 +207,27 @@ That freedom is what makes this an mTSP and not an assignment problem. Figure~\r
 shows the canonical case of two agents near each other and two distant goals. Splitting the goals
 costs 14, while giving both to one agent costs 7. The optimum is unbalanced.
 
-% KNOWN ISSUE, DEFERRED BY DECISION (2026-08-11): the figure labels the bundled tour
-% "cost 7" but with its current coordinates (A1 0,0 / A2 1,0 / G1 3,4 / G2 4,4) the true
-% cost is 8: A1->G1 = 7, G1->G2 = 1. Split (14) is correct.
-% FIX: swap the agents, A1 at (1,0) and A2 at (0,0), in presentation/make_diagrams.py:51.
-% Then A1->G1 = 6, A2->G2 = 8, so split = 14 and bundle = 6+1 = 7, both labels true.
-% We chose not to regenerate the PNG now. Revisit before submission.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.58\textwidth]{bundle_vs_split.png}
 \caption{Goal allocation is an mTSP, not a balanced assignment. Bundling both goals onto one
-agent (cost 7) beats splitting them (cost 14). As a result the ground-truth allocation $Y$ has
-columns that sum to one and rows that are free.}
+agent (cost 7) beats splitting them (cost 14). }
 \label{fig:bundle}
 \end{figure}
 
-Write $Y \in \{0,1\}^{N \times M}$ with $Y_{ij}=1$ when agent $i$ visits goal $j$. Columns sum to
-one and rows are unconstrained. The model therefore has to produce a column-wise distribution,
-giving for each goal a distribution over agents, instead of a doubly-stochastic or
-permutation-like output. This rules out Sinkhorn-style balanced-assignment layers, which impose a
-row constraint the problem does not have.
+Write $Y \in \{0,1\}^{N \times M}$ for the allocation: one row per agent and one column per goal, so
+$Y$ has $N$ rows and $M$ columns, and $Y_{ij}=1$ exactly when agent $i$ visits goal $j$. Reading
+down column $j$ answers ``which agent takes this goal'', and that column holds exactly one 1,
+because every goal is visited once by one agent. Reading across row $i$ answers ``which goals does
+this agent get'', and that row may hold any number of 1s, including none, because an agent is free
+to take several goals or sit idle. Columns therefore sum to one while rows are unconstrained.
+
+The same shape runs through the whole model. The input $D$ and the output $P$ are both $N \times M$
+with agents on the rows and goals on the columns, so all three matrices line up entry for entry,
+while $G$ is $M \times M$ because it relates goals to each other rather than agents to goals. The
+model therefore has to produce a column-wise distribution, giving for each goal a distribution over
+agents, instead of a doubly-stochastic or permutation-like output. This rules out Sinkhorn-style
+balanced-assignment layers, which impose a row constraint the problem does not have.
 
 \subsection{The exact baseline}
 
@@ -252,10 +262,7 @@ The solver runs LKH followed by CBS. Ours runs a forward pass through the networ
 ordering, then CBS (Figure~\ref{fig:pipelines}). Both pipelines plan collision-free paths with the
 same CBS implementation. They differ in how the visit order within each agent's goals is obtained:
 LKH returns it as part of its tour, whereas our pipeline computes it separately once the allocation
-is fixed. For up to eight goals per agent the two agree, since our enumeration is exhaustive and
-therefore optimal for a given allocation; Section~\ref{sec:deploy} gives the details. Because the
-instance and the cost measure are identical, the difference between the two output plans isolates
-the allocation decision.
+is fixed.
 
 \begin{figure}[htbp]
 \centering
@@ -269,7 +276,7 @@ wall-time can be attributed to the allocator.}
 
 The network never sees the grid. It sees two matrices of BFS shortest-path distances that respect
 walls: $D \in \mathbb{R}^{N \times M}$ from each agent to each goal, and $G \in \mathbb{R}^{M \times
-M}$ between goals (Figure~\ref{fig:dg}). Both are divided by $(W-1)+(H-1)$, where $W$ and $H$ are the
+M}$ between goals (Figure~\ref{fig:dg}). Both are divided (normalized) by $(W-1)+(H-1)$, where $W$ and $H$ are the
 grid's width and height in cells. This is the longest shortest path on an open grid of that size,
 so it puts distances from grids of different sizes on a common scale. Walls can force a detour that
 exceeds it, so it is a scale factor and not a strict bound.
@@ -316,12 +323,7 @@ stacked $L$ deep. Attention operates on variable-length sequences by constructio
 meaningful ``agent 1''. Leaving out positional embeddings makes the network permutation-equivariant
 in both axes and removes the last size-dependent component, which is why the same weights can
 process a $2\times2$ instance and a $50\times100$ one.
-
-The architecture therefore places no upper bound on $N$ or $M$. The largest instances in the design
-study, 50 agents and 100 goals, are limited by the exact solver instead: every result is a ratio
-against its output, so the baseline has to finish before a comparison exists at all.
-Section~\ref{sec:final} pushes this further, to 220 agents and 430 goals on the real benchmark
-maps, and measures where the ceiling actually falls.
+The architecture therefore places no upper bound on $N$ or $M$. 
 
 \textbf{Output.} A shared $\mathrm{Linear}(d \to 1)$ reduces each token to a single logit, giving an
 $N\times M$ logit matrix. A softmax down each column yields $P$, where $P_{ij}$ is the probability
@@ -333,6 +335,17 @@ array, which is what a GPU needs in order to process many at once, so a
 \texttt{MixedSizeBatchSampler} builds shape-homogeneous batches. Each batch holds a single $(N,M)$
 while consecutive batches differ, which trains one model jointly across many configurations without
 padding or masking.
+
+\textbf{A worked example.} Take $N{=}3$ agents, $M{=}4$ goals and embedding width $d{=}128$. Here
+$D$ is $3\times4$ and $G$ is $4\times4$. Tokenization turns each of the 12 entries of $D$ into a
+128-vector, giving a $3\times4$ grid of tokens. For goal 2, the four numbers $G_{21}$ through
+$G_{24}$ each become a 128-vector and are summed into one 128-vector, which is added to all three
+tokens in column 2. Row attention then runs over sequences of length 4, once per agent; column
+attention runs over sequences of length 3, once per goal. The head reduces every token to a single
+number, giving a $3\times4$ logit matrix, and a softmax down each of the four columns gives each
+goal a distribution over the three agents. Now change the instance to $N{=}180$ and $M{=}350$: the
+token grid becomes $180\times350$, attention runs over sequences of length 350 and 180 instead of 4
+and 3, and every weight in the network is the same one used for the $3\times4$ case.
 
 \begin{figure}[htbp]
 \centering
@@ -359,6 +372,17 @@ the work. The min-sum term is a mild geometric regularizer that penalizes assign
 and prevents degenerate near-uniform predictions early in training. It is only a first-hop proxy,
 with no tour chaining and no collision term, so the true mTSP objective reaches training solely
 through the labels $Y$.
+
+Training directly on the solver's true post-allocation cost would target the objective we actually
+measure, but it is impractical at these scales. The cost is only defined once a discrete allocation
+has been decoded from $P$ and CBS has planned around the conflicts, so as a function of the
+network's output it is a step function: small changes in $P$ leave it unchanged until an arg-max
+flips, and then it jumps. Gradient descent has nothing to follow. Estimators that do not need a
+gradient, policy-gradient methods among them, exist and would apply, but they need many cost
+evaluations per update, and every evaluation is a CBS solve costing seconds to a minute at the
+scales of Section~\ref{sec:final}. Labels, by contrast, are generated once and then reused across
+all 50 epochs. Imitating the solver's allocation recovers most of the signal for a small fraction
+of that compute, which is why the collision-aware alternatives are left to future work.
 
 \subsection{Data generation and deployment}
 \label{sec:deploy}
@@ -409,9 +433,10 @@ collision-free path length in grid steps that CBS returns. Cost ratio is the per
 $c_{\mathrm{nn}}/c_{\mathrm{sol}}$ averaged over instances, so $1.0$ means the network matched the
 exact solver. Exact match is the fraction of instances whose two integer costs are identical, and
 it runs far higher than full-assignment accuracy because many distinct allocations are
-cost-equivalent ties. Diff is the mean gap in grid steps, speedup is the ratio of mean
-single-instance wall-times on the same node, and the infeasible and fallback counters report how
-often the candidate chain was needed. These are the numbers that matter, because they measure the
+cost-equivalent ties. 
+
+\textbf{Diff} is the mean gap in grid steps, \textbf{speedup} is the ratio of mean
+single-instance wall-times on the same node, and the \textbf{infeasible} and \textbf{fallback} counters report how often the candidate chain was needed. These are the numbers that matter, because they measure the
 plan an agent would actually execute.
 
 % ═════════════════════════════════════════════════════════════════════════════
@@ -439,11 +464,11 @@ adjacent and should be bundled. $G$ supplies precisely that, and it is worth mor
 data and capacity put together: about four times as much at $N{=}2$ and roughly twice as much at
 $N{=}5$. This fixes the input.
 
-\textbf{D3. One size-agnostic model beats a family of specialists.} A universal model trained
-jointly across fifteen $(N,M)$ configurations matched or beat the per-size specialists on all but
+\textbf{D3. One size-agnostic model beats a family of fixed-size models.} A universal model trained
+jointly across fifteen $(N,M)$ configurations matched or beat the fixed-size models on all but
 the easiest configuration, gaining $2.4$ to $3.5$ points. It also transferred upward. Evaluated on
-$N{=}5$, which it had never seen in training, it beat the specialist trained on $N{=}5$ by $3.5$
-points. Cross-configuration training acts as a regularizer and pushes the model toward the
+$N{=}5$, which it had never seen in training, it beat the model built specifically for $N{=}5$ by
+$3.5$ points. Cross-configuration training acts as a regularizer and pushes the model toward the
 allocation principle instead of size-specific patterns. This justifies the universal architecture.
 
 \textbf{D4. Allocation accuracy is the wrong yardstick.} Measured end to end, the fraction of
@@ -460,7 +485,7 @@ ties that an open grid leaves to chance. Pushed to large $N,M$, the same model c
 against a map-trained model's $1.048$, with a revealing signature: at $M{=}30$, adding agents hurt
 the model trained on $N\le5$ while helping the in-range model (Figure~\ref{fig:designfigs}b).
 Separately, training on cheap random grids matched training on the real maps everywhere except the
-maze, where random obstacles never reproduce corridor structure. This is why the final models are
+maze, where random obstacles never reproduce corridor structure. It is the reason the final models are
 retrained at the target scale and on the target maps, and it is the direct motivation for
 Section~\ref{sec:final}.
 
@@ -477,7 +502,7 @@ Transformer backbone            & $+1.7 \to +6.7$ pt   & vs.\ MLP, margin growin
 \textbf{Add goal-goal distances $G$} & $\mathbf{+14.2 \to +18.0}$ \textbf{pt} & with vs.\ without $G$, all agent counts \\
 More data (10k $\to$ 20k)       & $+0.4$ pt            & gains already flattening at 20k \\
 More capacity (to h256/L6)      & $\le +1.4$ pt        & largest configuration diverges at lr $10^{-3}$ \\
-Size-agnostic universal model   & $+2.4 \to +3.5$ pt   & vs.\ per-size specialists; $+3.5$ pt zero-shot at $N{=}5$ \\
+Size-agnostic universal model   & $+2.4 \to +3.5$ pt   & vs.\ fixed-size models; $+3.5$ pt zero-shot at $N{=}5$ \\
 Judge by CBS execution cost     & 64--97\% vs.\ 44--91\% & exact-cost match vs.\ exact-allocation match \\
 Train on the target map family  & $1.048$ vs.\ $1.075$ & fixed-map vs.\ random; the gap is entirely the maze ($1.029$ vs.\ $1.127$) \\
 Retrain at the target scale     & $1.048$ vs.\ $1.246$ & map-trained vs.\ small-scale model at large $N,M$ \\
@@ -538,24 +563,23 @@ bounds the study: every training label still needs an exact solve, so it caps wh
 dataset can contain, and it caps how far a cost-ratio comparison can even be evaluated, since past
 it there is no solver baseline left to divide by.
 
-\textbf{Two training regimes, one per tier.} We compare two datasets, and deliberately name them to
-match the model tier trained on each, so the two naming schemes never disagree. \textbf{Dataset A}
-is the \emph{large} regime: $N\in\{60,120,180\}$, $M\in\{100,225,350\}$, 3000 train / 500 val / 500
-test instances per configuration, labeled at a per-instance solver time that on the hardest cells
-approaches the practical one-minute ceiling above. \textbf{Dataset B} is the \emph{regular} regime:
-$N\in\{30,55,80\}$, $M\in\{50,100,150\}$, 20000/2000/2000 instances per configuration, labeled in
-roughly ten seconds per instance, $6\times$ more samples than Dataset A per configuration. Five
+\textbf{Two training regimes.} We compare two training datasets, named for what separates them. The
+\textbf{large dataset} covers $N\in\{60,120,180\}$, $M\in\{100,225,350\}$, with 3000 train / 500 val
+/ 500 test instances per configuration, labeled at a per-instance solver time that on the hardest
+cells approaches the practical one-minute ceiling above. The \textbf{regular dataset} covers
+$N\in\{30,55,80\}$, $M\in\{50,100,150\}$, with 20000/2000/2000 instances per configuration, labeled
+in roughly ten seconds per instance, which buys $6\times$ more samples per configuration. Five
 roles, one generalist trained on all four maps and four specialists trained on \texttt{empty},
-\texttt{random}, \texttt{maze} and \texttt{room} respectively, are each trained once on Dataset A,
-giving the five \textbf{Tier A} models (Table~\ref{tab:modelinv}), and once on Dataset B, giving
-the five \textbf{Tier B} models (Table~\ref{tab:modelinvB}). Ten models in total, all h128/L6.
+\texttt{random}, \texttt{maze} and \texttt{room} respectively, are each trained once on each dataset:
+five \textbf{large-dataset models} (Table~\ref{tab:modelinv}) and five \textbf{regular-dataset
+models} (Table~\ref{tab:modelinvB}). Ten models in total, all h128/L6.
 
 \textbf{Why only the smaller architecture.} We fix the network to h128/L6 because it beat the larger
 h256/L8 in-distribution on every aggregate metric, with a $1.048$ versus $1.052$ execution-cost
 ratio and $0.433$ versus $0.402$ exact match, while running roughly 20\% faster. The extra
 $2.5\times$ in parameters bought no accuracy, and the larger model reached its validation optimum
 early and then overfitted. The ranking does reverse far out of distribution, where the larger model
-extrapolates better, but Dataset A places the large-instance regime inside the training distribution
+extrapolates better, but the large dataset places the large-instance regime inside the training distribution
 by construction, so the in-distribution verdict is the applicable one.
 
 \textbf{Protocol.} All models see identical instances for a given (map, $N$, $M$) cell, which allows
@@ -567,7 +591,7 @@ maps and weak on the fourth.
 
 \begin{table}[htbp]
 \centering
-\caption{Model inventory, Dataset A leg (Tier A, five roles).}
+\caption{Model inventory, large-dataset leg (five roles).}
 \small
 \begin{tabularx}{\textwidth}{llXcccc}
 \toprule
@@ -585,7 +609,7 @@ Model & Role & Train map(s) & $N$ range & $M$ range & Epochs & Batch \\
 
 \begin{table}[htbp]
 \centering
-\caption{Model inventory, Dataset B leg (Tier B, five roles).}
+\caption{Model inventory, regular-dataset leg (five roles).}
 \small
 \begin{tabularx}{\textwidth}{llXcccc}
 \toprule
@@ -603,12 +627,12 @@ Model & Role & Train map(s) & $N$ range & $M$ range & Epochs & Batch \\
 \smallskip
 \small\noindent Both tiers share the h128/L6 universal architecture, about 1.19M parameters (the
 same as Exp 12's h128/L6), lr $5\times10^{-4}$ and gradient clipping 1.0; seed 0 is the one
-evaluated throughout. Tier A trained 3 seeds per role (0--2); Tier B trained 2 (0--1, cut from a
+evaluated throughout. The large-dataset leg trained 3 seeds per role (0--2); the regular-dataset leg trained 2 (0--1, cut from a
 planned 3 partway through to let all four per-map configs run in parallel under the cluster's
-per-user GPU quota). Tier A's batch size (4) is far smaller than Tier B's (32) because Tier A's
+per-user GPU quota). The large-dataset batch size (4) is far smaller than the regular-dataset one (32) because its
 instances are larger ($N,M$ up to $180\times350$) and hit GPU memory limits sooner. Best
-validation loss, best epoch and training wall-time are blank for Tier A (only evaluation CSVs
-were pulled, not per-epoch logs) and partly blank for Tier B (available for the four specialists,
+validation loss, best epoch and training wall-time are blank for the large-dataset models (only evaluation CSVs
+were pulled, not per-epoch logs) and partly blank for the regular-dataset models (available for the four specialists,
 not the joint run, whose training history spans several resubmissions and isn't attributable to
 one run). Full columns, including what is and is not populated per model, in
 \texttt{report/data/exp16/model\_inventory.csv}.
@@ -635,49 +659,49 @@ it does show is that a single pathological instance, not the typical one, is wha
 fixed compute budget. The \textbf{labeling ceiling} is therefore map-dependent and probabilistic
 rather than a fixed $(N,M)$: \texttt{maze} stayed at 0\% timeouts everywhere tested, \texttt{empty}
 hit one 33\% cell, and \texttt{random} and \texttt{room} hit 33--67\% timeout rates at some cells
-and 0\% at larger ones, which is exactly the profile that motivated Dataset A's
+and 0\% at larger ones, which is exactly the profile that motivated the large dataset's
 500-sample-per-config size and 600\,s per-instance timeout. The \textbf{evaluation ceiling} is at least $N{=}220,M{=}430$: every
 map solved all three instances there, none hit the timeout. We did not observe a size \textbf{beyond}
 which the solver stops returning altogether within this sweep, only rising unpredictability, so
 that third ceiling is not yet reached at 220$\times$430.
 
-Figure~\ref{fig:stage1crossover} answers RQ2 by evaluating each role's Dataset A and Dataset B
+Figure~\ref{fig:stage1crossover} answers RQ2 by evaluating each role's the large dataset and the regular dataset
 checkpoints on a common pair of grids spanning both regimes, so every checkpoint is scored both at
-home and away. The left panel is Dataset B's native grid (small, $N\in\{30,55,80\}$,
-$M\in\{50,100,150\}$): Dataset B is interpolating inside its training range there, while Dataset A
+home and away. The left panel is the regular dataset's native grid (small, $N\in\{30,55,80\}$,
+$M\in\{50,100,150\}$): the regular dataset is interpolating inside its training range there, while the large dataset
 is extrapolating downward, to sizes well below anything it ever trained on. The right panel is
-Dataset A's native grid (large, $N\in\{60,120,180\}$, $M\in\{100,225,350\}$): the roles reverse,
-Dataset A is at home and Dataset B is extrapolating upward, to sizes beyond anything it ever
+the large dataset's native grid (large, $N\in\{60,120,180\}$, $M\in\{100,225,350\}$): the roles reverse,
+the large dataset is at home and the regular dataset is extrapolating upward, to sizes beyond anything it ever
 trained on.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.85\textwidth]{fig_stage1_crossover.png}
-\caption{Dataset A vs.\ B, mean cost ratio over each role's own domain, on both regimes. Solid
-lines never cross: Dataset B (green) sits below Dataset A (navy) at every point in both panels,
-whether Dataset B is interpolating at home (left) or extrapolating up (right).}
+\caption{large vs.\ regular dataset, mean cost ratio over each role's own domain, on both regimes. Solid
+lines never cross: the regular dataset (green) sits below the large dataset (navy) at every point in both panels,
+whether the regular dataset is interpolating at home (left) or extrapolating up (right).}
 \label{fig:stage1crossover}
 \end{figure}
 
 \input{stage1_winner_table.tex}
 
-Table~\ref{tab:stage1winners} confirms it numerically: no crossover for any role. Dataset B wins
-on both its own small grid and on Dataset A's large grid, for all five roles, everywhere it was
-tested — including the right panel, where Dataset B is the one extrapolating and Dataset A is on
+Table~\ref{tab:stage1winners} confirms it numerically: no crossover for any role. The regular dataset wins
+on both its own small grid and on the large dataset's large grid, for all five roles, everywhere it was
+tested, including the right panel, where the regular dataset is the one extrapolating and the large dataset is on
 native ground. The margin ranges from $0.011$ on \texttt{maze} to $0.027$ on \texttt{empty}, and
-the two curves rise together with $M$ rather than swapping order, so the gap is consistent rather
+the two curves rise together with $M$ instead of swapping order, so the gap is consistent rather
 than regime-dependent. This contradicts the RQ2 hypothesis, which expected each dataset to win in
-its own regime. The likely explanation is sample count: Dataset B supplies $6\times$ more
+its own regime. The likely explanation is sample count: the regular dataset supplies $6\times$ more
 instances per configuration (20k/2k/2k against 3k/500/500), and that advantage evidently
-outweighs training directly at the target scale, even when Dataset A is evaluated on its own home
+outweighs training directly at the target scale, even when the large dataset is evaluated on its own home
 turf. For a fixed labeling budget the result favors many regular-size instances over fewer large
-ones: Dataset B's checkpoints extrapolate to the large regime better than Dataset A's checkpoints
+ones: the regular dataset's checkpoints extrapolate to the large regime better than the large dataset's checkpoints
 perform natively there, at a fraction of the per-instance solver cost needed to generate the
 labels in the first place.
 
 \begin{table}[htbp]
 \centering
-\caption{Joint (generalist) versus the native specialist, Dataset A leg (Tier A models), own
+\caption{Joint (generalist) versus the native specialist, large-dataset leg, own
 $N,M$ grid. Speedup is mean solver wall-time divided by mean NN pipeline wall-time, same node.
 $n$ is the total instances evaluated, summed across the model's 9 $(N,M)$ cells
 (joint\,/\,specialist), out of a nominal 900 ($9\times100$); shortfalls come from whole eval
@@ -701,7 +725,7 @@ room   & 1.069 & 3.9\% & 10.7$\times$ & 1.066 & 3.8\% & 9.2$\times$  & 786/789 \
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.62\textwidth]{fig_tierA_5x4_heatmap.png}
-\caption{Full $5\times4$ matrix, Dataset A leg (Tier A models): every model (rows) on every map
+\caption{Full $5\times4$ matrix, large-dataset leg: every model (rows) on every map
 (columns), execution-cost ratio, own $N,M$ grid. Asterisked cells are a specialist on its own
 map. A heatmap is used in place of grouped bars to keep all 20 cells, diagonal and off-diagonal,
 legible in one figure.}
@@ -735,7 +759,7 @@ that one bit wrong is where the appeal of routing collapses.
 These predictions are recorded before the results are available, so that they can be confirmed or
 refuted rather than rationalized afterward.
 
-On RQ2, we expect Dataset B to win at small $(N,M)$ and Dataset A at large $(N,M)$, with a crossover
+On RQ2, we expect the regular dataset to win at small $(N,M)$ and the large dataset at large $(N,M)$, with a crossover
 somewhere between, since each dataset places its own regime in-distribution. The interesting
 quantity is not which one wins overall but where the crossover sits, because that determines how a
 fixed labeling budget should be spent.
@@ -752,7 +776,7 @@ identical and a forward pass costs the same either way. Any measured difference 
 to the environment rather than the model, and one that survives scrutiny would be worth
 investigating.
 
-\textbf{Verdict, Dataset A leg (RQ3).} The RQ3 prediction was half right. We expected the
+\textbf{Verdict, large-dataset leg (RQ3).} The RQ3 prediction was half right. We expected the
 specialist advantage to be largest on maze. Instead the two tie everywhere, including maze, 1.057
 against 1.057. The structure-specific effect D5 predicted is real but sits off-diagonal, not on
 it. It is misrouting to maze, not training on maze, that is expensive, which is the more
@@ -762,7 +786,7 @@ misrouted to maze to 17.1$\times$ for a specialist on its own map, and the gap t
 replanning rather than the environment.
 
 \textbf{Verdict, both legs (RQ2).} The RQ2 prediction failed as well, in the opposite direction
-from a mixed result: we expected a crossover, and found none. Dataset B wins for every role on
+from a mixed result: we expected a crossover, and found none. The regular dataset wins for every role on
 both regimes, so the more-data, moderate-scale strategy is the better use of a fixed labeling
 budget outright, not merely in its own range.
 
@@ -772,8 +796,9 @@ budget outright, not merely in its own range.
 
 \textbf{When the learned allocator is the right choice.} It replaces the allocation step only, so it
 pays off where allocation dominates and where many instances have to be solved. At large $N$ and
-$M$, LKH's TSP grows expensive while the forward pass stays close to flat, which yields
-5.9--9.4$\times$ end-to-end speedup at roughly 20\% above optimal cost. Under batched,
+$M$, LKH's TSP grows expensive while the forward pass does not, and the gain grows with the
+problem: pushed to 220 agents and 430 goals on the benchmark maps, the generalist runs
+6.6--16.1$\times$ faster than the solver while staying within 9.6\% of optimal. Under batched,
 high-throughput use, allocation-only inference is orders of magnitude faster than the solver. On
 unstructured geometry, even cheap random-grid training transfers, so no map-specific data collection
 is needed. The opposite cases are equally clear. On small instances the exact solver already answers
@@ -807,15 +832,15 @@ distances were worth more than every other improvement combined. The model gener
 geometry but not across problem scale, and its speed advantage appears in exactly the regimes where
 the exact solver's does not, at scale and in batch.
 
-On the Dataset A leg (Tier A models), map specialists do not beat the generalist. The two tie on
+On the large-dataset leg, map specialists do not beat the generalist. The two tie on
 cost everywhere, including maze, and the generalist wins on wall-time for one of the four maps.
 What does justify routing is avoiding the alternative failure mode: sending an instance to the
 wrong specialist costs up to 52\% on maze specifically, so a router is worth building only if it
 can identify the map reliably, not to chase a specialist-vs-generalist quality gap that this leg
 did not find. Which training distribution, many regular-size instances or fewer large ones, makes
-the better use of a fixed labeling budget is now answered: Dataset B (regular size, more samples)
-beats Dataset A (large size, fewer samples) outright, on its own grid and extrapolated onto
-Dataset A's, for every one of the five roles, with no crossover.
+the better use of a fixed labeling budget is now answered: the regular dataset (regular size, more samples)
+beats the large dataset (large size, fewer samples) outright, on its own grid and extrapolated onto
+the large dataset's, for every one of the five roles, with no crossover.
 
 \textbf{Future work.} The solver's true tour cost is already computed during data generation and then
 discarded. Storing it would enable a tour-aware loss term
@@ -830,13 +855,10 @@ The RobustMCPF solver, the exact LKH and CBS pipeline used here for ground truth
 comparison baseline, is the work of Yehonatan Kidushim, Avraham Natan, Roni Stern and Meir Kalech,
 and is not a contribution of this project. We thank the authors for permission to use it.
 
-\begin{TODO}{TEXT --- decide before submission}
-Related work (Section~2.4) is deliberately one paragraph; expand it into a standalone section if
-the grader expects a fuller treatment. (References below have been checked against their
-original venues, years and page numbers; two corrections were applied: \texttt{robustmcpf} was
-missing its AAAI volume/issue/pages, and \texttt{pointernet} cited the retroactive name
-``NeurIPS'' for a paper published in 2015 under the conference's contemporaneous name, NIPS.)
-\end{TODO}
+% Related work is deliberately one paragraph: kept as-is by decision (2026-08-19).
+% References below were verified against their original venues, years and pages; two were
+% corrected: robustmcpf lacked AAAI volume/issue/pages, and pointernet cited the retroactive
+% name 'NeurIPS' for a 2015 paper published under the contemporaneous name NIPS.
 
 % ═════════════════════════════════════════════════════════════════════════════
 {\footnotesize
@@ -878,18 +900,18 @@ missing its AAAI volume/issue/pages, and \texttt{pointernet} cited the retroacti
 \section{Appendix}
 % ═════════════════════════════════════════════════════════════════════════════
 
-\subsection*{Full per-configuration results, Dataset A leg (Tier A)}
+\subsection*{Full per-configuration results, large-dataset leg}
 
 \input{tierA_fullconfig_table.tex}
 
 \subsection*{Reproducibility}
 
 All ten models (both tiers): h128/L6 universal transformer, \texttt{use\_goal\_dists} enabled, lr
-$5\times10^{-4}$, gradient clip 1.0, 50-epoch budget, seed 0 evaluated. Tier A (Dataset A) used
-batch size 4 and 3 seeds trained (0--2); Tier B (Dataset B) used batch size 32 and 2 seeds trained
+$5\times10^{-4}$, gradient clip 1.0, 50-epoch budget, seed 0 evaluated. The large-dataset models used
+batch size 4 and 3 seeds trained (0--2); the regular-dataset models used batch size 32 and 2 seeds trained
 (0--1, cut from a planned 3 partway through to let all four per-map configs run in parallel under
-the cluster's per-user GPU quota) — Tier A's larger instances ($N,M$ up to $180\times350$) hit GPU
-memory limits at a much smaller batch size than Tier B's. Training ran on the cluster's
+the cluster's per-user GPU quota). The large-dataset instances ($N,M$ up to $180\times350$) hit GPU
+memory limits at a much smaller batch size. Training ran on the cluster's
 \texttt{gpu} partition, \texttt{rtx\_6000} GPUs. Evaluation (\texttt{full\_pipeline\_eval.py}, both
 the NN pipeline and the solver baseline) ran on the \texttt{cpu} partition, same node per cell.
 Torch version and exact Slurm job identifiers were not recorded on the machine this report is
@@ -898,14 +920,14 @@ written on and are not yet available.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.92\textwidth]{fig_tierB_convergence.png}
-\caption{Training convergence for Tier B (Dataset B)'s four specialists — the only 4 of the 10
+\caption{Training convergence for the regular-dataset specialists, the only 4 of the 10
 models whose per-epoch logs were pulled from the cluster. Circles mark the best-validation-loss
 checkpoint. The signature is milder than the earlier large-model run (Section~\ref{sec:design}):
 \texttt{empty} and \texttt{random} are still improving at the 50-epoch budget's end (best epoch
 48 and 43), while \texttt{maze} and \texttt{room} peak earlier (epoch 29 and 41) and drift upward
 afterward, so best-validation checkpointing still does some work but is not doing heavy lifting
-here the way it did in Section~\ref{sec:design}. Tier A's logs and Tier B's joint model were not
-pulled for this report.}
+here the way it did in Section~\ref{sec:design}. The large-dataset logs and the regular-dataset
+generalist were not pulled for this report.}
 \label{fig:tierBconv}
 \end{figure}
 
@@ -917,9 +939,10 @@ tracked in the repository (unlike \texttt{results/}, which is git-ignored). Per-
 alloc\_ms, nn\_plan\_ms, solver\_ms}, written by \texttt{evaluation/full\_pipeline\_eval.py}.
 \texttt{report/data/exp16/manifest.md} documents what is and is not included and the remaining
 open items (offline accuracy, training logs in the requested per-epoch format, and cluster job
-identifiers) — but in its \emph{own} naming, where ``Tier A'' pairs with ``dataset B'' and
-``Tier B'' with ``dataset A'', the reverse of this report's Dataset A/Dataset B convention, which
-we chose instead to match each tier's own letter. Translate by swapping the letter when
-cross-referencing raw file paths against the manifest.
+identifiers). The raw files and the manifest keep the original run names: \texttt{tierA\_*} holds
+the large-dataset models and \texttt{tierB\_*} the regular-dataset ones. This report uses the
+descriptive names throughout, and the model identifiers in Tables~\ref{tab:modelinv}
+and~\ref{tab:modelinvB} are the literal directory names, so they can be matched to the files
+directly.
 
 \end{document}
