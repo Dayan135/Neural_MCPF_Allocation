@@ -797,8 +797,9 @@ budget outright, not merely in its own range.
 
 \textbf{When the learned allocator is the right choice.} It replaces the allocation step only, so it
 pays off where allocation dominates and where many instances have to be solved. At large $N$ and
-$M$, LKH's TSP grows expensive while the forward pass stays close to flat, which yields
-5.9--9.4$\times$ end-to-end speedup at roughly 20\% above optimal cost. Under batched,
+$M$, LKH's TSP grows expensive while the forward pass does not, and the gain grows with the
+problem: at the scales of Section~\ref{sec:final} the generalist runs 8.8--12.1$\times$ faster
+than the solver while its plans cost 6--7\% more. Under batched,
 high-throughput use, allocation-only inference is orders of magnitude faster than the solver. On
 unstructured geometry, even cheap random-grid training transfers, so no map-specific data collection
 is needed. The opposite cases are equally clear. On small instances the exact solver already answers
