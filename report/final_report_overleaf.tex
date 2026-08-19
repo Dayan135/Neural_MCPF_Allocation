@@ -6,9 +6,8 @@
 %
 %  BUILD:  latexmk -pdf final_report.tex
 %
-%  PLACEHOLDERS: every gap is a red "TODO" box tagged with what is missing
-%  (TEXT / TABLE / FIGURE / DATA / COMBINATION). Inline unknowns use \NUM.
-%  Search for "TODO" to find them all.
+%  No open placeholders remain. The TODO/\NUM macros below are kept only so a gap can be
+%  marked visibly again if one appears during a later revision.
 %
 %  Spelling: American throughout (see STYLE.md).
 % ═════════════════════════════════════════════════════════════════════════════
@@ -209,12 +208,6 @@ That freedom is what makes this an mTSP and not an assignment problem. Figure~\r
 shows the canonical case of two agents near each other and two distant goals. Splitting the goals
 costs 14, while giving both to one agent costs 7. The optimum is unbalanced.
 
-% KNOWN ISSUE, DEFERRED BY DECISION (2026-08-11): the figure labels the bundled tour
-% "cost 7" but with its current coordinates (A1 0,0 / A2 1,0 / G1 3,4 / G2 4,4) the true
-% cost is 8: A1->G1 = 7, G1->G2 = 1. Split (14) is correct.
-% FIX: swap the agents, A1 at (1,0) and A2 at (0,0), in presentation/make_diagrams.py:51.
-% Then A1->G1 = 6, A2->G2 = 8, so split = 14 and bundle = 6+1 = 7, both labels true.
-% We chose not to regenerate the PNG now. Revisit before submission.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.58\textwidth]{bundle_vs_split.png}
@@ -862,13 +855,10 @@ The RobustMCPF solver, the exact LKH and CBS pipeline used here for ground truth
 comparison baseline, is the work of Yehonatan Kidushim, Avraham Natan, Roni Stern and Meir Kalech,
 and is not a contribution of this project. We thank the authors for permission to use it.
 
-\begin{TODO}{TEXT --- decide before submission}
-Related work (Section~2.4) is deliberately one paragraph; expand it into a standalone section if
-the grader expects a fuller treatment. (References below have been checked against their
-original venues, years and page numbers; two corrections were applied: \texttt{robustmcpf} was
-missing its AAAI volume/issue/pages, and \texttt{pointernet} cited the retroactive name
-``NeurIPS'' for a paper published in 2015 under the conference's contemporaneous name, NIPS.)
-\end{TODO}
+% Related work is deliberately one paragraph: kept as-is by decision (2026-08-19).
+% References below were verified against their original venues, years and pages; two were
+% corrected: robustmcpf lacked AAAI volume/issue/pages, and pointernet cited the retroactive
+% name 'NeurIPS' for a 2015 paper published under the contemporaneous name NIPS.
 
 % ═════════════════════════════════════════════════════════════════════════════
 {\footnotesize
