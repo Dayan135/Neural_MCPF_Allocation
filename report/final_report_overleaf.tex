@@ -1,6 +1,6 @@
 % ═════════════════════════════════════════════════════════════════════════════
-%  Neural MCPF Allocation — final course article
-%  Target: 7–10 pages (guideline, not a hard cap), single-column 11pt A4.
+%  Neural MCPF Allocation: final course article
+%  Target: 7-10 pages (guideline, not a hard cap), single-column 11pt A4.
 %  Structure spec: docs/superpowers/specs/2026-08-10-final-report-structure-design.md
 %  Style rules:    report/STYLE.md
 %
@@ -486,7 +486,7 @@ ties that an open grid leaves to chance. Pushed to large $N,M$, the same model c
 against a map-trained model's $1.048$, with a revealing signature: at $M{=}30$, adding agents hurt
 the model trained on $N\le5$ while helping the in-range model (Figure~\ref{fig:designfigs}b).
 Separately, training on cheap random grids matched training on the real maps everywhere except the
-maze, where random obstacles never reproduce corridor structure. This is why the final models are
+maze, where random obstacles never reproduce corridor structure. It is the reason the final models are
 retrained at the target scale and on the target maps, and it is the direct motivation for
 Section~\ref{sec:final}.
 
@@ -686,11 +686,11 @@ whether the regular dataset is interpolating at home (left) or extrapolating up 
 
 \input{stage1_winner_table.tex}
 
-Table~\ref{tab:stage1winners} confirms it numerically: no crossover for any role. the regular dataset wins
+Table~\ref{tab:stage1winners} confirms it numerically: no crossover for any role. The regular dataset wins
 on both its own small grid and on the large dataset's large grid, for all five roles, everywhere it was
-tested — including the right panel, where the regular dataset is the one extrapolating and the large dataset is on
+tested, including the right panel, where the regular dataset is the one extrapolating and the large dataset is on
 native ground. The margin ranges from $0.011$ on \texttt{maze} to $0.027$ on \texttt{empty}, and
-the two curves rise together with $M$ rather than swapping order, so the gap is consistent rather
+the two curves rise together with $M$ instead of swapping order, so the gap is consistent rather
 than regime-dependent. This contradicts the RQ2 hypothesis, which expected each dataset to win in
 its own regime. The likely explanation is sample count: the regular dataset supplies $6\times$ more
 instances per configuration (20k/2k/2k against 3k/500/500), and that advantage evidently
@@ -787,7 +787,7 @@ misrouted to maze to 17.1$\times$ for a specialist on its own map, and the gap t
 replanning rather than the environment.
 
 \textbf{Verdict, both legs (RQ2).} The RQ2 prediction failed as well, in the opposite direction
-from a mixed result: we expected a crossover, and found none. the regular dataset wins for every role on
+from a mixed result: we expected a crossover, and found none. The regular dataset wins for every role on
 both regimes, so the more-data, moderate-scale strategy is the better use of a fixed labeling
 budget outright, not merely in its own range.
 
@@ -921,7 +921,7 @@ written on and are not yet available.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.92\textwidth]{fig_tierB_convergence.png}
-\caption{Training convergence for the regular-dataset specialists — the only 4 of the 10
+\caption{Training convergence for the regular-dataset specialists, the only 4 of the 10
 models whose per-epoch logs were pulled from the cluster. Circles mark the best-validation-loss
 checkpoint. The signature is milder than the earlier large-model run (Section~\ref{sec:design}):
 \texttt{empty} and \texttt{random} are still improving at the 50-epoch budget's end (best epoch
